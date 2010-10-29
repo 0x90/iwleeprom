@@ -33,6 +33,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <getopt.h>
+#include <endian.h>
 
 //#define DEBUG
 #define MMAP_LENGTH 4096
@@ -175,6 +176,20 @@ struct pci_id valid_ids[] = {
 	{ 0, 0, 0, "" }
 };
 
+#if BYTE_ORDER == BIG_ENDIAN
+#define cpu2le16(x) __bswap_16(x)
+#define cpu2be16(x) x
+#define le2cpu16(x) __bswap_16(x)
+#define be2cpu16(x) x
+#elif BYTE_ORDER == LITTLE_ENDIAN
+#define cpu2le16(x) x
+#define cpu2be16(x) __bswap_16(x)
+#define le2cpu16(x) x
+#define be2cpu16(x) __bswap_16(x)
+#else
+#error Unsupported BYTE_ORDER!
+#endif
+
 void eeprom_lock()
 {
 	unsigned long data;	
@@ -224,6 +239,7 @@ void release_card()
 void eeprom_read(char *filename)
 {
 	unsigned int addr = 0;
+	uint16_t buf[EEPROM_SIZE/2];
 
 	FILE *fd = fopen(filename, "wb");
 	if (!fd)
@@ -233,20 +249,21 @@ void eeprom_read(char *filename)
 
 	for (addr = 0; addr < EEPROM_SIZE; addr += 2)
 	{
-		unsigned char value_byte;
+		uint16_t value;
 		unsigned int data = 0x0000FFFC & (addr << 1);
 		memcpy(mappedAddress + 0x2c, &data, 4);
 		usleep(50);
 		memcpy(&data, mappedAddress + 0x2c, 4);
 		if (data & 1 != 1)
 			die("Read not complete! Timeout at %.4dx\n", addr);
-		value_byte = (data & 0xFF0000) >> 16;
-		fwrite(&value_byte, 1,1, fd);
-		value_byte = (data & 0xFF000000) >> 24;
-		fwrite(&value_byte, 1,1, fd);
+
+		value = (data & 0xFFFF0000) >> 16;
+		buf[addr/2] = cpu2le16(value);
+
 		printf(".");
 		fflush(stdout);
 	}
+	fwrite(buf, EEPROM_SIZE, 1, fd);
 
 	eeprom_unlock();
 
@@ -260,20 +277,20 @@ void eeprom_write(char *filename)
 	unsigned int addr = 0;
 	unsigned int data;
 	enum byte_order order = order_unknown;
-
+	uint16_t buf[EEPROM_SIZE/2];
+	uint16_t value;
+	size_t   size;
 	FILE *fd = fopen(filename, "rb");
 	if (!fd)
 		die("Can't read file %s\n", filename);
 
 	eeprom_lock();	
 
-	while (!feof(fd))
+	size = 2 * fread(buf, 2, EEPROM_SIZE/2, fd);
+	for(addr=0; addr<size;addr+=2)
 	{
-		uint16_t value;
-		if (fread(&value, 2,1, fd) == 0) break;
-
-
 		if (order == order_unknown) {
+			value = le2cpu16(buf[addr/2]);
 			if(value == 0x5a40) {
 				order = order_le;
 			} else if(value == 0x405a) {
@@ -284,7 +301,9 @@ void eeprom_write(char *filename)
 			printf("Dump file byte order: %s ENDIAN\n", (order == order_le) ? "LITTLE":"BIG");
 		}
 		if (order == order_be)
-			value = ((value & 0xFF) << 8) | ((value & 0xFF00) >> 8);
+			value = be2cpu16( buf[addr/2] );
+		else
+			value = le2cpu16( buf[addr/2] );
 
 		data = value;
 		data <<= 16;
@@ -306,7 +325,6 @@ void eeprom_write(char *filename)
 
 		printf(".");
 		fflush(stdout);
-		addr += 2;
 	}
 
 	eeprom_unlock();
