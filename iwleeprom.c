@@ -466,7 +466,7 @@ int main(int argc, char** argv)
 	dev.device = NULL;
 
 	while (1) {
-		c = getopt_long(argc, argv, "d:r:w:h:p", long_options, NULL);
+		c = getopt_long(argc, argv, "d:r:w:hp", long_options, NULL);
 		if (c == -1)
 			break;
 		switch(c) {
