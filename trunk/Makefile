@@ -3,7 +3,7 @@ SBINDIR=/usr/local/sbin
 all: iwleeprom
 
 iwleeprom: iwleeprom.c
-		gcc -o iwleeprom iwleeprom.c
+		gcc -Wall -o iwleeprom iwleeprom.c
 
 clean:
 		rm -f iwleeprom
