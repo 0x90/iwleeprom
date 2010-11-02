@@ -446,6 +446,12 @@ void eeprom_patch11n()
 	printf("Patching card EEPROM...\n");
 
 	eeprom_lock();	
+
+	printf("-> Changing subdev ID\n");
+	value = eeprom_read16(0x14);
+	if ((value & 0x000F) == 0x0006) {
+		eeprom_write16(0x14, (value & 0x000F) | 0x0001);
+	}
 /*
 enabling .11n
 
@@ -458,17 +464,14 @@ W @8C << 103E (603F) <- x001 xxxx xxxx xxx0
 	value = eeprom_read16(0x8A);
 	if ((value & 0x0040) != 0x0040) {
 		printf("  SKU CAP\n");
-		value |= 0x0040;
-		eeprom_write16(0x8A, value);
+		eeprom_write16(0x8A, value | 0x0040);
 	}
 
 // OEM_MODE
 	value = eeprom_read16(0x8C);
 	if ((value & 0x7001) != 0x1000) {
 		printf("  OEM MODE\n");
-		value &= 0x9FFE;
-		value |= 0x1000;
-		eeprom_write16(0x8C, value);
+		eeprom_write16(0x8C, (value & 0x9FFE) | 0x1000);
 	}
 
 /*
