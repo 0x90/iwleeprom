@@ -198,7 +198,7 @@ void eeprom_lock()
 	memcpy(mappedAddress, &data, 4);
 	usleep(5);
 	memcpy(&data, mappedAddress, 4);
-	if (data & 0x00200000 != 0x00200000)
+	if ((data & 0x00200000) != 0x00200000)
 		die("err! ucode is using eeprom!\n");
 	eeprom_locked = 1;
 }
@@ -211,7 +211,7 @@ void eeprom_unlock()
 	memcpy(mappedAddress, &data, 4);
 	usleep(5);
 	memcpy(&data, mappedAddress, 4);
-	if (data & 0x00200000 != 0x00200000)
+	if ((data & 0x00200000) != 0x00200000)
 		die("err! software is still using eeprom!\n");
 	eeprom_locked = 0;
 }
@@ -243,7 +243,7 @@ uint16_t eeprom_read16(unsigned int addr)
 	memcpy(mappedAddress + 0x2c, &data, 4);
 	usleep(50);
 	memcpy(&data, mappedAddress + 0x2c, 4);
-	if (data & 1 != 1)
+	if ((data & 1) != 1)
 		die("Read not complete! Timeout at %.4dx\n", addr);
 
 	value = (data & 0xFFFF0000) >> 16;
@@ -263,9 +263,8 @@ void eeprom_write16(unsigned int addr, uint16_t value)
 	data = 0x0000FFC & (addr << 1);
 	memcpy(mappedAddress + 0x2c, &data, 4);
 	usleep(50);
-
 	memcpy(&data, mappedAddress + 0x2c, 4);
-	if (data & 1 != 1)
+	if ((data & 1) != 1)
 		die("Read not complete! Timeout at %.4dx\n", addr);
 	if (value != (data >> 16))
 		die("Verification error at %.4x\n", addr);
@@ -300,7 +299,6 @@ void eeprom_read(char *filename)
 void eeprom_write(char *filename)
 {
 	unsigned int addr = 0;
-	unsigned int data;
 	enum byte_order order = order_unknown;
 	uint16_t buf[EEPROM_SIZE/2];
 	uint16_t value;
@@ -516,7 +514,6 @@ void check_device(struct pcidev_id *id)
 void map_device()
 {
 	FILE *f;
-	unsigned int id;
 	char path[512];
 	unsigned char data[64];
 	int i;
