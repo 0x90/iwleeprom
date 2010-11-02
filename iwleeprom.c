@@ -44,7 +44,7 @@ static struct option long_options[] = {
 	{"read",      1, NULL, 'r'},
 	{"write",     1, NULL, 'w'},
 	{"help",      0, NULL, 'h'},
-	{"patch11n",      0, NULL, 'p'}
+	{"patch11n",  0, NULL, 'p'}
 };
 
 struct pcidev_id
@@ -236,6 +236,41 @@ void release_card()
 		munmap(mappedAddress, MMAP_LENGTH);
 }
 
+uint16_t eeprom_read16(unsigned int addr)
+{
+	uint16_t value;
+	unsigned int data = 0x0000FFFC & (addr << 1);
+	memcpy(mappedAddress + 0x2c, &data, 4);
+	usleep(50);
+	memcpy(&data, mappedAddress + 0x2c, 4);
+	if (data & 1 != 1)
+		die("Read not complete! Timeout at %.4dx\n", addr);
+
+	value = (data & 0xFFFF0000) >> 16;
+	return value;
+}
+
+void eeprom_write16(unsigned int addr, uint16_t value)
+{
+	unsigned int data = value;
+	data <<= 16;
+	data |= 0x0000FFFC & (addr << 1);
+	data |= 0x2;
+
+	memcpy(mappedAddress + 0x2c, &data, 4);
+	usleep(5000);
+
+	data = 0x0000FFC & (addr << 1);
+	memcpy(mappedAddress + 0x2c, &data, 4);
+	usleep(50);
+
+	memcpy(&data, mappedAddress + 0x2c, 4);
+	if (data & 1 != 1)
+		die("Read not complete! Timeout at %.4dx\n", addr);
+	if (value != (data >> 16))
+		die("Verification error at %.4x\n", addr);
+}
+
 void eeprom_read(char *filename)
 {
 	unsigned int addr = 0;
@@ -249,17 +284,7 @@ void eeprom_read(char *filename)
 
 	for (addr = 0; addr < EEPROM_SIZE; addr += 2)
 	{
-		uint16_t value;
-		unsigned int data = 0x0000FFFC & (addr << 1);
-		memcpy(mappedAddress + 0x2c, &data, 4);
-		usleep(50);
-		memcpy(&data, mappedAddress + 0x2c, 4);
-		if (data & 1 != 1)
-			die("Read not complete! Timeout at %.4dx\n", addr);
-
-		value = (data & 0xFFFF0000) >> 16;
-		buf[addr/2] = cpu2le16(value);
-
+		buf[addr/2] = cpu2le16( eeprom_read16(addr) );
 		printf(".");
 		fflush(stdout);
 	}
@@ -305,24 +330,7 @@ void eeprom_write(char *filename)
 		else
 			value = le2cpu16( buf[addr/2] );
 
-		data = value;
-		data <<= 16;
-		data |= 0x0000FFFC & (addr << 1);
-		data |= 0x2;
-
-		memcpy(mappedAddress + 0x2c, &data, 4);
-		usleep(5000);
-
-		data = 0x0000FFC & (addr << 1);
-		memcpy(mappedAddress + 0x2c, &data, 4);
-		usleep(50);
-
-		memcpy(&data, mappedAddress + 0x2c, 4);
-		if (data & 1 != 1)
-			die("Read not complete! Timeout at %.4dx\n", addr);
-		if (value != (data >> 16))
-			die("Verification error at %.4x\n", addr);
-
+		eeprom_write16(addr, value);
 		printf(".");
 		fflush(stdout);
 	}
@@ -334,9 +342,132 @@ void eeprom_write(char *filename)
 	printf("\nEEPROM has been written from %s\n", filename);
 }
 
+
+struct patch_item
+{
+	unsigned int addr;
+	uint16_t	 data;
+};
+
+struct patch_item regulatory[] =
+{
+/*
+	BAND 2.4GHz (@15e-179 with regulatory base @156)
+*/
+// enabling channels 12-14 (1-11 should be enabled on all cards)
+	{ 0x1E, 0x0f21 }, // 12
+	{ 0x20, 0x0f21 }, // 13
+	{ 0x22, 0x0f21 }, // 14
+
+/*
+	BAND 5GHz
+*/
+// subband 5170-5320 MHz (@198-1af)
+//	{ 0x42, 0x0fe1 }, // 34
+	{ 0x44, 0x0fe1 }, // 36
+//	{ 0x46, 0x0fe1 }, // 38
+	{ 0x48, 0x0fe1 }, // 40
+//	{ 0x4a, 0x0fe1 }, // 42
+	{ 0x4c, 0x0fe1 }, // 44
+//	{ 0x4e, 0x0fe1 }, // 46
+	{ 0x50, 0x0fe1 }, // 48
+	{ 0x52, 0x0f31 }, // 52
+	{ 0x54, 0x0f31 }, // 56
+	{ 0x56, 0x0f31 }, // 60
+	{ 0x58, 0x0f31 }, // 64
+
+// subband 5500-5700 MHz (@1b2-1c7)
+	{ 0x5c, 0x0f31 }, // 100
+	{ 0x5e, 0x0f31 }, // 104
+	{ 0x60, 0x0f31 }, // 108
+	{ 0x62, 0x0f31 }, // 112
+	{ 0x64, 0x0f31 }, // 116
+	{ 0x66, 0x0f31 }, // 120
+	{ 0x68, 0x0f31 }, // 124
+	{ 0x6a, 0x0f31 }, // 128
+	{ 0x6c, 0x0f31 }, // 132
+	{ 0x6e, 0x0f31 }, // 136
+	{ 0x70, 0x0f31 }, // 140
+
+// subband 5725-5825 MHz (@1ca-1d5)
+//	{ 0x74, 0x0fa1 }, // 145
+	{ 0x76, 0x0fa1 }, // 149
+	{ 0x78, 0x0fa1 }, // 153
+	{ 0x7a, 0x0fa1 }, // 157
+	{ 0x7c, 0x0fa1 }, // 151
+	{ 0x7e, 0x0fa1 }, // 165
+
+/*
+	BAND 2.4GHz, HT40 channels (@1d8-1e5)
+*/
+	{ 0x82, 0x0e6f }, // 1
+	{ 0x84, 0x0f6f }, // 2
+	{ 0x86, 0x0f6f }, // 3
+	{ 0x88, 0x0f6f }, // 4
+	{ 0x8a, 0x0f6f }, // 5
+	{ 0x8c, 0x0f6f }, // 6
+	{ 0x8e, 0x0f6f }, // 7
+
+/*
+	BAND 5GHz, HT40 channels (@1e8-1fd)
+*/
+	{ 0x92, 0x0fe1 }, // 36
+	{ 0x94, 0x0fe1 }, // 44
+	{ 0x96, 0x0f31 }, // 52
+	{ 0x98, 0x0f31 }, // 60
+	{ 0x9a, 0x0f31 }, // 100
+	{ 0x9c, 0x0f31 }, // 108
+	{ 0x9e, 0x0f31 }, // 116
+	{ 0xa0, 0x0f31 }, // 124
+	{ 0xa2, 0x0f31 }, // 132
+	{ 0xa4, 0x0f61 }, // 149
+	{ 0xa6, 0x0f61 }, // 157
+
+	{ 0, 0}
+};
+
 void eeprom_patch11n()
 {
-	printf("Not implemented!\n");
+	uint16_t value;
+	unsigned int reg_offs;
+
+	eeprom_lock();	
+/*
+enabling .11n
+
+W @8A << 00F0 (00B0) <- xxxx xxxx x1xx xxxx
+W @8C << 103E (603F) <- x110 xxxx xxxx xxx0
+*/
+
+// SKU_CAP
+	value = eeprom_read16(0x8A);
+	value |= 0x0040;
+	eeprom_write16(0x8A, value);
+
+// OEM_MODE
+	value = eeprom_read16(0x8C);
+	value &= 0xEFFE;
+	value |= 0x6000;
+	eeprom_write16(0x8C, value);
+
+/*
+writing SKU ID - 'MoW' signature
+*/
+	eeprom_write16(0x158, 0x6f4d);
+	eeprom_write16(0x15A, 0x0057);
+
+// reading regulatory offset
+	reg_offs = 2 * eeprom_read16(0xCC);
+	printf("Regulatory base: %04x", reg_offs);
+/*
+writing channels regulatory...
+*/
+	int idx=0;
+	for ( ;regulatory[idx].addr; idx++)
+		eeprom_write16(reg_offs + regulatory[idx].addr, regulatory[idx].data);
+
+	eeprom_unlock();
+	printf("\nCard EEPROM patched successfully\n");
 }
 
 void die(  const char* format, ... ) {
@@ -414,8 +545,9 @@ void search_card()
 	dir = opendir(DEVICES_PATH);
 	if (!dir)
 		die("Can't list PCI devices\n");
-
-//	printf("PCI devices:\n");
+#ifdef DEBUG
+	printf("PCI devices:\n");
+#endif
 	id.device = (char*) malloc(256 * sizeof(char));
 	do {
 		dentry = readdir(dir);
@@ -424,14 +556,14 @@ void search_card()
 
 		strcpy(id.device, dentry->d_name);
 		check_device(&id);
-/*
+#ifdef DEBUG
 		printf("    %s: class %04x   id %04x:%04x   subid %04x:%04x\n",
 			id.device,
 			id.class,
 			id.ven,  id.dev,
 			id.sven, id.sdev
 			);
-*/
+#endif
 		if (id.idx >=0 ) {
 			if(!cnt)
 				ids = (struct pcidev_id*) malloc(sizeof(id));
@@ -501,17 +633,17 @@ int main(int argc, char** argv)
 				patch11n = true;
 				break;
 			case 'h':
-				die("EEPROM reader/writer for intel wifi cards\n\nUsage: iwleeprom [-d device] [-r filename] [-w filename] [-p]\n\n\t-d device\t\tdevice in format 0000:00:00.0 (domain:bus:dev.func)\n\t-r filename\t\tdump eeprom to binary file\n\t-w filename\t\twrite eeprom from binary file\n\t-p\t\tpatch device eeprom to enable 802.11n\n\n", argv[0]);	
+				die("EEPROM reader/writer for intel wifi cards\n\nUsage: iwleeprom [-d device] [-r filename] [-w filename] [-p]\n\n\t-d device\tdevice in format 0000:00:00.0 (domain:bus:dev.func)\n\t-r filename\tdump eeprom to binary file\n\t-w filename\twrite eeprom from binary file\n\t-p\t\tpatch device eeprom to enable 802.11n\n\n", argv[0]);	
 			default:
 				die("Unknown param '%c'\n", c);
 		}
 	}
 
 	if (!dev.device) search_card();
+	if (!dev.device) exit(1);
 	check_device(&dev);
 
-	if (!dev.class)
-		exit(1);
+	if (!dev.class)	exit(2);
 	if (dev.idx < 0)
 		die("Selected device not supported\n");
 
