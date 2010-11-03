@@ -1,0 +1,57 @@
+.\" iwleeprom is released under the GNU GENERAL PUBLIC LICENSE.
+.TH "iwleeprom" "8" "03 November, 2010" "ittrium, ShultZ" "iwleeprom 0.0"
+.SH "NAME"
+iwleeprom \- EEPROM reader/writer for intel wifi cards
+.SH "SYNOPSIS"
+\fBiwleeprom [-d device] [-r filename [-b]] [-w filename] [-p] [-h]\fR
+
+.SH "FEATURES"
+iwleeprom can read/write intel wifi cards EEPROM to/from file.
+.TP
+Following cards are supported read/write:
+.br
+4965AGN
+.br
+5100ABG/AGN
+.br
+5150AGX/ANX
+.br
+5300AGN
+.br
+5350ANX
+.br
+.TP
+Following cards are supported read-only:
+.br
+1000BG/BGN
+.br
+6000 series
+.br
+.SH "OPTIONS"
+.TP
+.B \-d \-\-device <dev>
+PCI device in following format:
+.br
+.I 0000:00:00.0
+(domain:bus:dev.func)
+.TP
+.B \-r \-\-read <output_file>
+dump eeprom to binary file
+.TP
+.B \-b \-\-bigendian
+set output file byteorder to big-endian (default: little-endian)
+.br
+use with \fB\-r\fR
+.TP
+.B \-w \-\-write <input_file>
+write eeprom from binary file
+dump file byteorder will be autodetected
+.TP
+.B \-p \-\-patch11n
+patch device eeprom to enable 802.11n.
+.br
+use this option to convert your 5100ABG/5150AGX to 5100AGN/5150ANX respectively
+.TP
+.B \-h \-\-help
+show help
+
