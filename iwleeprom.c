@@ -20,6 +20,8 @@
 ****************************************************************************
 */
 
+#define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdbool.h>
 #include <unistd.h>
@@ -76,6 +78,7 @@ char *mappedAddress;
 unsigned int offset;
 unsigned char eeprom_locked;
 enum byte_order dump_order;
+uid_t ruid,euid,suid;
 
 void die(  const char* format, ... ); 
 char	*ifname = NULL,
@@ -233,7 +236,7 @@ void init_card()
 }
 
 void release_card()
-{	
+{
 	if (mappedAddress != NULL)
 		munmap(mappedAddress, MMAP_LENGTH);
 }
@@ -277,11 +280,15 @@ void eeprom_read(char *filename)
 	unsigned int addr = 0;
 	uint16_t buf[EEPROM_SIZE/2];
 
-	FILE *fd = fopen(filename, "wb");
-	if (!fd)
+	FILE *fd;
+	
+	seteuid(ruid);
+	if (!(fd = fopen(filename, "wb")))
 		die("Can't create file %s\n", filename);
+	seteuid(suid);
 
-	eeprom_lock();	
+	eeprom_lock();
+
 	printf("Saving dump with byte order: %s ENDIAN\n", (dump_order == order_le) ? "LITTLE":"BIG");
 
 	for (addr = 0; addr < EEPROM_SIZE; addr += 2)
@@ -293,11 +300,13 @@ void eeprom_read(char *filename)
 		printf(".");
 		fflush(stdout);
 	}
+
+	seteuid(ruid);
 	fwrite(buf, EEPROM_SIZE, 1, fd);
+	fclose(fd);
+	seteuid(suid);
 
 	eeprom_unlock();
-
-	fclose(fd);
 
 	printf("\nEEPROM has been dumped to %s\n", filename);
 }
@@ -309,13 +318,16 @@ void eeprom_write(char *filename)
 	uint16_t buf[EEPROM_SIZE/2];
 	uint16_t value;
 	size_t   size;
-	FILE *fd = fopen(filename, "rb");
-	if (!fd)
+	FILE *fd;
+	seteuid(ruid);
+	if (!(fd = fopen(filename, "rb")))
 		die("Can't read file %s\n", filename);
+	size = 2 * fread(buf, 2, EEPROM_SIZE/2, fd);
+	fclose(fd);
+	seteuid(suid);
 
 	eeprom_lock();	
 
-	size = 2 * fread(buf, 2, EEPROM_SIZE/2, fd);
 	for(addr=0; addr<size;addr+=2)
 	{
 		if (order == order_unknown) {
@@ -344,8 +356,6 @@ void eeprom_write(char *filename)
 	}
 
 	eeprom_unlock();
-
-	fclose(fd);
 
 	printf("\nEEPROM has been written from %s\n", filename);
 }
@@ -500,10 +510,11 @@ writing channels regulatory...
 
 void die(  const char* format, ... ) {
 	va_list args;
-	printf("\n");    
+	fprintf(stderr, "\n\E[31;60m");
 	va_start( args, format );
 	vfprintf( stderr, format, args );
 	va_end( args );
+	fprintf(stderr, "\E[0m");
 
 	release_card();
 	exit(1);
@@ -642,6 +653,7 @@ int main(int argc, char** argv)
 	char c;
 	dev.device = NULL;
 	dump_order = order_le;
+	getresuid(&ruid, &euid, &suid);
 
 	while (1) {
 		c = getopt_long(argc, argv, "d:r:w:bhp", long_options, NULL);
