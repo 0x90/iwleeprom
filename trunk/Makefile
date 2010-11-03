@@ -9,7 +9,7 @@ clean:
 		rm -f iwleeprom
 
 install: iwleeprom
-		install -m 755 iwleeprom $(SBINDIR)
+		install -m 4755 iwleeprom $(SBINDIR)
 
 uninstall:
 		rm -f $(SBINDIR)/iwleeprom
