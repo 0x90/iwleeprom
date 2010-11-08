@@ -3,7 +3,11 @@
 .SH "NAME"
 iwleeprom \- EEPROM reader/writer for intel wifi cards
 .SH "SYNOPSIS"
-\fBiwleeprom [-d device] [-r filename [-b]] [-w filename] [-p] [-h]\fR
+\fBiwleeprom [-d device] [-r filename [-b]] [-w filename] [-p] [-D]\fR
+.br
+\fBiwleeprom -l\fR
+.br
+\fBiwleeprom -h\fR
 
 .SH "FEATURES"
 iwleeprom can read/write intel wifi cards EEPROM to/from file.
@@ -51,6 +55,14 @@ dump file byteorder will be autodetected
 patch device eeprom to enable 802.11n.
 .br
 use this option to convert your 5100ABG/5150AGX to 5100AGN/5150ANX respectively
+.TP
+.B \-D \-\-debug <level>
+set debug level (0-1), default 0
+.br
+.TP
+.B \-l \-\-list
+list known cards
+.br
 .TP
 .B \-h \-\-help
 show help
