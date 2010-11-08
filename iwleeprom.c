@@ -47,6 +47,8 @@ static struct option long_options[] = {
 	{"write",     1, NULL, 'w'},
 	{"bigendian", 0, NULL, 'b'},
 	{"help",      0, NULL, 'h'},
+	{"list",      0, NULL, 'l'},
+	{"debug",     1, NULL, 'D'},
 	{"patch11n",  0, NULL, 'p'}
 };
 
@@ -84,6 +86,7 @@ void die(  const char* format, ... );
 char	*ifname = NULL,
 		*ofname = NULL;
 bool patch11n;
+unsigned int  debug = 0;
 
 struct pcidev_id dev;
 
@@ -552,6 +555,17 @@ void check_device(struct pcidev_id *id)
 			id->idx = i;
 }
 
+void list_supported()
+{
+	int i;
+	for(i=0; valid_ids[i].ven; i++)
+		printf("  %04x:%04x [%s] %s \n", 
+			valid_ids[i].ven,
+			valid_ids[i].dev,
+			valid_ids[i].writable ? "RW" : "RO",
+			valid_ids[i].name);
+}
+
 void map_device()
 {
 	FILE *f;
@@ -583,9 +597,8 @@ void search_card()
 	dir = opendir(DEVICES_PATH);
 	if (!dir)
 		die("Can't list PCI devices\n");
-#ifdef DEBUG
-	printf("PCI devices:\n");
-#endif
+	if (debug)
+		printf("PCI devices:\n");
 	id.device = (char*) malloc(256 * sizeof(char));
 	do {
 		dentry = readdir(dir);
@@ -594,14 +607,20 @@ void search_card()
 
 		strcpy(id.device, dentry->d_name);
 		check_device(&id);
-#ifdef DEBUG
-		printf("    %s: class %04x   id %04x:%04x   subid %04x:%04x\n",
-			id.device,
-			id.class,
-			id.ven,  id.dev,
-			id.sven, id.sdev
+		if (debug) {
+			printf("    %s: class %04x   id %04x:%04x   subid %04x:%04x",
+				id.device,
+				id.class,
+				id.ven,  id.dev,
+				id.sven, id.sdev
 			);
-#endif
+			if (id.idx < 0)
+				printf("\n");
+			else
+				printf(" [%s] %s \n", 
+					valid_ids[id.idx].writable ? "RW" : "RO",
+					valid_ids[id.idx].name);
+		}
 		if (id.idx >=0 ) {
 			if(!cnt)
 				ids = (struct pcidev_id*) malloc(sizeof(id));
@@ -656,10 +675,13 @@ int main(int argc, char** argv)
 	getresuid(&ruid, &euid, &suid);
 
 	while (1) {
-		c = getopt_long(argc, argv, "d:r:w:bhp", long_options, NULL);
+		c = getopt_long(argc, argv, "ld:r:w:bhpD:", long_options, NULL);
 		if (c == -1)
 			break;
 		switch(c) {
+			case 'l':
+				list_supported();
+				exit(0);
 			case 'd':
 				dev.device = optarg;
 				break;
@@ -675,16 +697,23 @@ int main(int argc, char** argv)
 			case 'p':
 				patch11n = true;
 				break;
+			case 'D':
+				debug = atoi(optarg);
+				if (debug)
+					printf("debug level: %s\n", optarg);
+				break;
 			case 'h':
 				die("EEPROM reader/writer for intel wifi cards\n\n"
-					"Usage: %s [-d device] [-r filename] [-w filename] [-p]\n\n"
+					"Usage: %s [-d device] [-r filename [-b]] [-w filename] [-p] [-D debug_level]\n\n"
 					"\t-d device\tdevice in format 0000:00:00.0 (domain:bus:dev.func)\n"
 					"\t-r filename\tdump eeprom to binary file\n"
 					"\t-w filename\twrite eeprom from binary file\n"
 					"\t-b\t\tsave dump in big-endian byteorder (default: little-endian)\n"
-					"\t-p\t\tpatch device eeprom to enable 802.11n\n\n", argv[0]);	
+					"\t-p\t\tpatch device eeprom to enable 802.11n\n"
+					"\t-l\t\tlist known cards\n"
+					"\t-D\t\tset debug level (0-1, default 0)\n", argv[0]);
 			default:
-				die("Unknown param '%c'\n", c);
+				return 1;
 		}
 	}
 
@@ -706,9 +735,8 @@ int main(int argc, char** argv)
 	if (!offset)
 		die("Can't obtain memory address\n");
 
-#ifdef DEBUG
-	printf("address: %08x\n", offset);
-#endif
+	if (debug)
+		printf("address: %08x\n", offset);
 
 	if(!ifname && !ofname && !patch11n)
 		printf("No file names given or patch option selected!\nNo EEPROM actions will be performed, just write-enable test\n");
