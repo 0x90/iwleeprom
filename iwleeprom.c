@@ -558,6 +558,7 @@ void check_device(struct pcidev_id *id)
 void list_supported()
 {
 	int i;
+	printf("Known devices:\n");
 	for(i=0; valid_ids[i].ven; i++)
 		printf("  %04x:%04x [%s] %s \n", 
 			valid_ids[i].ven,
@@ -704,14 +705,26 @@ int main(int argc, char** argv)
 				break;
 			case 'h':
 				die("EEPROM reader/writer for intel wifi cards\n\n"
-					"Usage: %s [-d device] [-r filename [-b]] [-w filename] [-p] [-D debug_level]\n\n"
-					"\t-d device\tdevice in format 0000:00:00.0 (domain:bus:dev.func)\n"
-					"\t-r filename\tdump eeprom to binary file\n"
-					"\t-w filename\twrite eeprom from binary file\n"
-					"\t-b\t\tsave dump in big-endian byteorder (default: little-endian)\n"
-					"\t-p\t\tpatch device eeprom to enable 802.11n\n"
-					"\t-l\t\tlist known cards\n"
-					"\t-D\t\tset debug level (0-1, default 0)\n", argv[0]);
+					"Usage:\n"
+					"\t%s [-d device] [-r filename [-b]] [-w filename] [-p] [-D debug_level]\n"
+					"\t%s -l\n\n"
+					"Options:\n"
+					"\t-d <device> | --device <device>\t\t"
+					"device in format 0000:00:00.0 (domain:bus:dev.func)\n"
+					"\t-r <filename> | --read <filename>\t"
+					"dump eeprom to binary file\n"
+					"\t-w <filename> | --write <filename>\t"
+					"write eeprom from binary file\n"
+					"\t-b | --bigendian\t\t\t"
+					"save dump in big-endian byteorder (default: little-endian)\n"
+					"\t-p | --patch11n\t\t\t\t"
+					"patch device eeprom to enable 802.11n\n"
+					"\t-l | --list\t\t\t\t"
+					"list known cards\n"
+					"\t-D <level> | --debug <level>\t\t"
+					"set debug level (0-1, default 0)\n"
+					"\t-h | --help\t\t\t\t"
+					"show this info\n", argv[0], argv[0]);
 			default:
 				return 1;
 		}
