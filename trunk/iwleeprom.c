@@ -53,6 +53,8 @@ static struct option long_options[] = {
 	{"nodev",     0, NULL, 'n'},
 	{"preserve-mac", 0, NULL, 'm'},
 	{"preserve-calib", 0, NULL, 'c'},
+	{"read",      0, NULL, 'r'},
+	{"write",     0, NULL, 'w'},
 	{"ifile",     1, NULL, 'i'},
 	{"ofile",     1, NULL, 'o'},
 	{"bigendian", 0, NULL, 'b'},
@@ -694,7 +696,7 @@ int main(int argc, char** argv)
 	getresuid(&ruid, &euid, &suid);
 
 	while (1) {
-		c = getopt_long(argc, argv, "ld:mcni:o:bhpD:", long_options, NULL);
+		c = getopt_long(argc, argv, "rwld:mcni:o:bhpD:", long_options, NULL);
 		if (c == -1)
 			break;
 		switch(c) {
@@ -713,8 +715,14 @@ int main(int argc, char** argv)
 			case 'c':
 				preserve_calib = true;
 				break;
+			case 'r':
+				die("option -r deprecated. use -o instead\n");
+				break;
 			case 'o':
 				ofname = optarg;
+				break;
+			case 'w':
+				die("option -w deprecated. use -i instead\n");
 				break;
 			case 'i':
 				ifname = optarg;
