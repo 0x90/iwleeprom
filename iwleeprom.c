@@ -39,12 +39,22 @@
 
 //#define DEBUG
 #define MMAP_LENGTH 4096
-#define EEPROM_SIZE 2048
+#define EEPROM_SIZE_4965 1024
+#define EEPROM_SIZE_5K   2048
+
+#define EEPROM_SIZE_MAX  2048
+
+#define IWL_SIGNATURE  0x5a40
+
+uint16_t buf[EEPROM_SIZE_MAX/2];
 
 static struct option long_options[] = {
 	{"device",    1, NULL, 'd'},
-	{"read",      1, NULL, 'r'},
-	{"write",     1, NULL, 'w'},
+	{"nodev",     0, NULL, 'n'},
+	{"preserve-mac", 0, NULL, 'm'},
+	{"preserve-calib", 0, NULL, 'c'},
+	{"ifile",     1, NULL, 'i'},
+	{"ofile",     1, NULL, 'o'},
 	{"bigendian", 0, NULL, 'b'},
 	{"help",      0, NULL, 'h'},
 	{"list",      0, NULL, 'l'},
@@ -57,14 +67,16 @@ struct pcidev_id
 	unsigned int class,
 				ven,  dev,
 				sven, sdev;
-	int idx;
+	int 	idx;
+	size_t  eeprom_size;
 	char *device;
 };
 
 struct pci_id
 {
-	unsigned int   ven, dev;
-	unsigned char  writable;
+	unsigned int	ven, dev;
+	bool			writable;
+	size_t			eeprom_size;
 	char name[64];
 };
 
@@ -85,7 +97,11 @@ uid_t ruid,euid,suid;
 void die(  const char* format, ... ); 
 char	*ifname = NULL,
 		*ofname = NULL;
-bool patch11n;
+bool patch11n = false,
+	 nodev = false,
+	 preserve_mac = false,
+	 preserve_calib = false;
+
 unsigned int  debug = 0;
 
 struct pcidev_id dev;
@@ -93,95 +109,30 @@ struct pcidev_id dev;
 #define DEVICES_PATH "/sys/bus/pci/devices"
 
 struct pci_id valid_ids[] = {
-	{ 0x8086, 0x0082, 0, "6000 Series Gen2"},
-	{ 0x8086, 0x0083, 0, "Centrino Wireless-N 1000"},
-/*		8086 1205  Centrino Wireless-N 1000 BGN
-		8086 1206  Centrino Wireless-N 1000 BG
-		8086 1225  Centrino Wireless-N 1000 BGN
-		8086 1226  Centrino Wireless-N 1000 BG
-		8086 1305  Centrino Wireless-N 1000 BGN
-		8086 1306  Centrino Wireless-N 1000 BG
-		8086 1325  Centrino Wireless-N 1000 BGN
-		8086 1326  Centrino Wireless-N 1000 BG*/
-	{ 0x8086, 0x0084, 0, "Centrino Wireless-N 1000"},
-/*		8086 1215  Centrino Wireless-N 1000 BGN
-		8086 1216  Centrino Wireless-N 1000 BG
-		8086 1315  Centrino Wireless-N 1000 BGN
-		8086 1316  Centrino Wireless-N 1000 BG*/
-	{ 0x8086, 0x0085, 0, "6000 Series Gen2"},
-	{ 0x8086, 0x0087, 0, "Centrino Advanced-N + WiMAX 6250"},
-/*		8086 1301  Centrino Advanced-N + WiMAX 6250 2x2 AGN
-		8086 1306  Centrino Advanced-N + WiMAX 6250 2x2 ABG
-		8086 1321  Centrino Advanced-N + WiMAX 6250 2x2 AGN
-		8086 1326  Centrino Advanced-N + WiMAX 6250 2x2 ABG*/
-	{ 0x8086, 0x0089, 0, "Centrino Advanced-N + WiMAX 6250"},
-/*		8086 1311  Centrino Advanced-N + WiMAX 6250 2x2 AGN
-		8086 1316  Centrino Advanced-N + WiMAX 6250 2x2 ABG*/
-	{ 0x8086, 0x0885, 0, "WiFi+WiMAX 6050 Series Gen2"},
-	{ 0x8086, 0x0886, 0, "WiFi+WiMAX 6050 Series Gen2"},
-	{ 0x8086, 0x4229, 1, "PRO/Wireless 4965 AG or AGN [Kedron] Network Connection"},
-/*		8086 1100  Vaio VGN-SZ79SN_C
-		8086 1101  PRO/Wireless 4965 AG or AGN*/
-	{ 0x8086, 0x422b, 0, "Centrino Ultimate-N 6300"},
-/*		8086 1101  Centrino Ultimate-N 6300 3x3 AGN
-		8086 1121  Centrino Ultimate-N 6300 3x3 AGN*/
-	{ 0x8086, 0x422c, 0, "Centrino Advanced-N 6200"},
-/*		8086 1301  Centrino Advanced-N 6200 2x2 AGN
-		8086 1306  Centrino Advanced-N 6200 2x2 ABG
-		8086 1307  Centrino Advanced-N 6200 2x2 BG
-		8086 1321  Centrino Advanced-N 6200 2x2 AGN
-		8086 1326  Centrino Advanced-N 6200 2x2 ABG*/
-	{ 0x8086, 0x4230, 1, "PRO/Wireless 4965 AG or AGN [Kedron] Network Connection"},
-/*		8086 1110  Lenovo ThinkPad T51
-		8086 1111  Lenovo ThinkPad T61*/
-	{ 0x8086, 0x4232, 1, "WiFi Link 5100"},
-/*		8086 1201  WiFi Link 5100 AGN
-		8086 1204  WiFi Link 5100 AGN
-		8086 1205  WiFi Link 5100 BGN
-		8086 1206  WiFi Link 5100 ABG
-		8086 1221  WiFi Link 5100 AGN
-		8086 1224  WiFi Link 5100 AGN
-		8086 1225  WiFi Link 5100 BGN
-		8086 1226  WiFi Link 5100 ABG
-		8086 1301  WiFi Link 5100 AGN
-		8086 1304  WiFi Link 5100 AGN
-		8086 1305  WiFi Link 5100 BGN
-		8086 1306  WiFi Link 5100 ABG
-		8086 1321  WiFi Link 5100 AGN
-		8086 1324  WiFi Link 5100 AGN
-		8086 1325  WiFi Link 5100 BGN
-		8086 1326  WiFi Link 5100 ABG*/
-	{ 0x8086, 0x4235, 1, "Ultimate N WiFi Link 5300"},
-	{ 0x8086, 0x4236, 1, "Ultimate N WiFi Link 5300"},
-	{ 0x8086, 0x4237, 1, "PRO/Wireless 5100 AGN [Shiloh] Network Connection"},
-/*		8086 1211  WiFi Link 5100 AGN
-		8086 1214  WiFi Link 5100 AGN
-		8086 1215  WiFi Link 5100 BGN
-		8086 1216  WiFi Link 5100 ABG
-		8086 1311  WiFi Link 5100 AGN
-		8086 1314  WiFi Link 5100 AGN
-		8086 1315  WiFi Link 5100 BGN
-		8086 1316  WiFi Link 5100 ABG*/
-	{ 0x8086, 0x4238, 0, "Centrino Ultimate-N 6300"},
-/*		8086 1111  Centrino Ultimate-N 6300 3x3 AGN*/
-	{ 0x8086, 0x4239, 0, "Centrino Advanced-N 6200"},
-/*		8086 1311  Centrino Advanced-N 6200 2x2 AGN
-		8086 1316  Centrino Advanced-N 6200 2x2 ABG*/
-	{ 0x8086, 0x423a, 1, "PRO/Wireless 5350 AGN [Echo Peak] Network Connection"},
-	{ 0x8086, 0x423b, 1, "PRO/Wireless 5350 AGN [Echo Peak] Network Connection"},
-	{ 0x8086, 0x423c, 1, "WiMAX/WiFi Link 5150"},
-/*		8086 1201  WiMAX/WiFi Link 5150 AGN
-		8086 1206  WiMAX/WiFi Link 5150 ABG
-		8086 1221  WiMAX/WiFi Link 5150 AGN
-		8086 1301  WiMAX/WiFi Link 5150 AGN
-		8086 1306  WiMAX/WiFi Link 5150 ABG
-		8086 1321  WiMAX/WiFi Link 5150 AGN*/
-	{ 0x8086, 0x423d, 1, "WiMAX/WiFi Link 5150"},
-/*		8086 1211  WiMAX/WiFi Link 5150 AGN
-		8086 1216  WiMAX/WiFi Link 5150 ABG
-		8086 1311  WiMAX/WiFi Link 5150 AGN
-		8086 1316  WiMAX/WiFi Link 5150 ABG*/
-	{ 0, 0, 0, "" }
+	{ 0x8086, 0x0082, 0, EEPROM_SIZE_5K,   "6000 Series Gen2"},
+	{ 0x8086, 0x0083, 0, EEPROM_SIZE_5K,   "Centrino Wireless-N 1000"},
+	{ 0x8086, 0x0084, 0, EEPROM_SIZE_5K,   "Centrino Wireless-N 1000"},
+	{ 0x8086, 0x0085, 0, EEPROM_SIZE_5K,   "6000 Series Gen2"},
+	{ 0x8086, 0x0087, 0, EEPROM_SIZE_5K,   "Centrino Advanced-N + WiMAX 6250"},
+	{ 0x8086, 0x0089, 0, EEPROM_SIZE_5K,   "Centrino Advanced-N + WiMAX 6250"},
+	{ 0x8086, 0x0885, 0, EEPROM_SIZE_5K,   "WiFi+WiMAX 6050 Series Gen2"},
+	{ 0x8086, 0x0886, 0, EEPROM_SIZE_5K,   "WiFi+WiMAX 6050 Series Gen2"},
+	{ 0x8086, 0x4229, 1, EEPROM_SIZE_4965, "PRO/Wireless 4965 AG or AGN [Kedron] Network Connection"},
+	{ 0x8086, 0x422b, 0, EEPROM_SIZE_5K,   "Centrino Ultimate-N 6300"},
+	{ 0x8086, 0x422c, 0, EEPROM_SIZE_5K,   "Centrino Advanced-N 6200"},
+	{ 0x8086, 0x4230, 1, EEPROM_SIZE_4965, "PRO/Wireless 4965 AG or AGN [Kedron] Network Connection"},
+	{ 0x8086, 0x4232, 1, EEPROM_SIZE_5K,   "WiFi Link 5100"},
+	{ 0x8086, 0x4235, 1, EEPROM_SIZE_5K,   "Ultimate N WiFi Link 5300"},
+	{ 0x8086, 0x4236, 1, EEPROM_SIZE_5K,   "Ultimate N WiFi Link 5300"},
+	{ 0x8086, 0x4237, 1, EEPROM_SIZE_5K,   "PRO/Wireless 5100 AGN [Shiloh] Network Connection"},
+	{ 0x8086, 0x4238, 0, EEPROM_SIZE_5K,   "Centrino Ultimate-N 6300"},
+	{ 0x8086, 0x4239, 0, EEPROM_SIZE_5K,   "Centrino Advanced-N 6200"},
+	{ 0x8086, 0x423a, 1, EEPROM_SIZE_5K,   "PRO/Wireless 5350 AGN [Echo Peak] Network Connection"},
+	{ 0x8086, 0x423b, 1, EEPROM_SIZE_5K,   "PRO/Wireless 5350 AGN [Echo Peak] Network Connection"},
+	{ 0x8086, 0x423c, 1, EEPROM_SIZE_5K,   "WiMAX/WiFi Link 5150"},
+	{ 0x8086, 0x423d, 1, EEPROM_SIZE_5K,   "WiMAX/WiFi Link 5150"},
+
+	{ 0, 0, 0, 0, "" }
 };
 
 #if BYTE_ORDER == BIG_ENDIAN
@@ -200,7 +151,8 @@ struct pci_id valid_ids[] = {
 
 void eeprom_lock()
 {
-	unsigned long data;	
+	unsigned long data;
+	if (nodev) return;
 	memcpy(&data, mappedAddress, 4);
 	data |= 0x00200000;
 	memcpy(mappedAddress, &data, 4);
@@ -213,7 +165,8 @@ void eeprom_lock()
 
 void eeprom_unlock()
 {
-	unsigned long data;	
+	unsigned long data;
+	if (nodev) return;
 	memcpy(&data, mappedAddress, 4);
 	data &= ~0x00200000;
 	memcpy(mappedAddress, &data, 4);
@@ -244,9 +197,50 @@ void release_card()
 		munmap(mappedAddress, MMAP_LENGTH);
 }
 
-uint16_t eeprom_read16(unsigned int addr)
+void init_dump(char *filename)
+{
+	FILE *fd;
+
+	seteuid(ruid);
+	if (!(fd = fopen(filename, "rb")))
+		die("Can't read file %s\n", filename);
+	dev.eeprom_size = 2 * fread(buf, 2, EEPROM_SIZE_MAX/2, fd);
+	fclose(fd);
+	seteuid(suid);
+
+	printf("Dump file: %s (read %ld bytes)\n", filename, dev.eeprom_size);
+	if(dev.eeprom_size < EEPROM_SIZE_4965)
+		die("Too small file!\n");
+
+	if ( IWL_SIGNATURE == le2cpu16(buf[0])) {
+		dump_order = order_le;
+	} else if ( IWL_SIGNATURE == be2cpu16(buf[0])) {
+		dump_order = order_be;
+	} else {
+		die("Invalid EEPROM signature!\n");
+	}
+	printf("  byte order: %s ENDIAN\n", (dump_order == order_le) ? "LITTLE":"BIG");
+}
+
+void fixate_dump(char *filename)
+{
+	FILE *fd;
+	seteuid(ruid);
+
+	if (!(fd = fopen(filename, "wb")))
+		die("Can't create file %s\n", filename);
+	fwrite(buf, dev.eeprom_size, 1, fd);
+	printf("Dump file written: %s\n", filename);
+	fclose(fd);
+
+	seteuid(suid);
+}
+
+const uint16_t eeprom_read16(unsigned int addr)
 {
 	uint16_t value;
+	if (nodev) goto _nodev;
+
 	unsigned int data = 0x0000FFFC & (addr << 1);
 	memcpy(mappedAddress + 0x2c, &data, 4);
 	usleep(50);
@@ -256,11 +250,25 @@ uint16_t eeprom_read16(unsigned int addr)
 
 	value = (data & 0xFFFF0000) >> 16;
 	return value;
+
+_nodev:
+	if (addr >= EEPROM_SIZE_MAX) return 0;
+	if (dump_order == order_le)
+		return (le2cpu16(buf[addr/2]));
+	else
+		return (be2cpu16(buf[addr/2]));
 }
 
 void eeprom_write16(unsigned int addr, uint16_t value)
 {
+	if (nodev) goto _nodev;
 	unsigned int data = value;
+
+	if (preserve_mac && ((addr>=0x2A && addr<0x30) || (addr>=0x92 && addr<0x97)))
+		return;
+	if (preserve_calib && (addr >= 0x200))
+		return;
+
 	data <<= 16;
 	data |= 0x0000FFFC & (addr << 1);
 	data |= 0x2;
@@ -276,14 +284,20 @@ void eeprom_write16(unsigned int addr, uint16_t value)
 		die("Read not complete! Timeout at %.4dx\n", addr);
 	if (value != (data >> 16))
 		die("Verification error at %.4x\n", addr);
+	return;
+_nodev:
+	if (addr >= EEPROM_SIZE_MAX) return;
+	if (dump_order == order_le)
+		buf[addr/2] = cpu2le16(value);
+	else
+		buf[addr/2] = cpu2be16(value);
 }
 
 void eeprom_read(char *filename)
 {
 	unsigned int addr = 0;
-	uint16_t buf[EEPROM_SIZE/2];
-
 	FILE *fd;
+	dev.eeprom_size = valid_ids[dev.idx].eeprom_size;
 	
 	seteuid(ruid);
 	if (!(fd = fopen(filename, "wb")))
@@ -294,18 +308,20 @@ void eeprom_read(char *filename)
 
 	printf("Saving dump with byte order: %s ENDIAN\n", (dump_order == order_le) ? "LITTLE":"BIG");
 
-	for (addr = 0; addr < EEPROM_SIZE; addr += 2)
+	for (addr = 0; addr < dev.eeprom_size; addr += 2)
 	{
 		if (dump_order == order_le)
 			buf[addr/2] = cpu2le16( eeprom_read16(addr) );
 		else
 			buf[addr/2] = cpu2be16( eeprom_read16(addr) );
+		if (0 ==(addr & 0x7F)) printf("%04x [", addr);
 		printf(".");
+		if (0x7F ==(addr & 0x7F)) printf("]\n");
 		fflush(stdout);
 	}
 
 	seteuid(ruid);
-	fwrite(buf, EEPROM_SIZE, 1, fd);
+	fwrite(buf, dev.eeprom_size, 1, fd);
 	fclose(fd);
 	seteuid(suid);
 
@@ -318,14 +334,15 @@ void eeprom_write(char *filename)
 {
 	unsigned int addr = 0;
 	enum byte_order order = order_unknown;
-	uint16_t buf[EEPROM_SIZE/2];
 	uint16_t value;
 	size_t   size;
 	FILE *fd;
+	dev.eeprom_size = valid_ids[dev.idx].eeprom_size;
+
 	seteuid(ruid);
 	if (!(fd = fopen(filename, "rb")))
 		die("Can't read file %s\n", filename);
-	size = 2 * fread(buf, 2, EEPROM_SIZE/2, fd);
+	size = 2 * fread(buf, 2, dev.eeprom_size/2, fd);
 	fclose(fd);
 	seteuid(suid);
 
@@ -334,10 +351,9 @@ void eeprom_write(char *filename)
 	for(addr=0; addr<size;addr+=2)
 	{
 		if (order == order_unknown) {
-			value = le2cpu16(buf[addr/2]);
-			if(value == 0x5a40) {
+			if ( IWL_SIGNATURE == le2cpu16(buf[addr/2])) {
 				order = order_le;
-			} else if(value == 0x405a) {
+			} else if ( IWL_SIGNATURE == be2cpu16(buf[addr/2])) {
 				order = order_be;
 			} else {
 				die("Invalid EEPROM signature!\n");
@@ -349,12 +365,14 @@ void eeprom_write(char *filename)
 		else
 			value = le2cpu16( buf[addr/2] );
 
+		if (0 ==(addr & 0x7F)) printf("%04x [", addr);
 		if (eeprom_read16(addr) != value) {
 			eeprom_write16(addr, value);
 			printf(".");
 		} else {
 			printf("=");
 		}
+		if (0x7F ==(addr & 0x7F)) printf("]\n");
 		fflush(stdout);
 	}
 
@@ -676,7 +694,7 @@ int main(int argc, char** argv)
 	getresuid(&ruid, &euid, &suid);
 
 	while (1) {
-		c = getopt_long(argc, argv, "ld:r:w:bhpD:", long_options, NULL);
+		c = getopt_long(argc, argv, "ld:mcni:o:bhpD:", long_options, NULL);
 		if (c == -1)
 			break;
 		switch(c) {
@@ -686,10 +704,19 @@ int main(int argc, char** argv)
 			case 'd':
 				dev.device = optarg;
 				break;
-			case 'r':
+			case 'n':
+				nodev = true;
+				break;
+			case 'm':
+				preserve_mac = true;
+				break;
+			case 'c':
+				preserve_calib = true;
+				break;
+			case 'o':
 				ofname = optarg;
 				break;
-			case 'w':
+			case 'i':
 				ifname = optarg;
 				break;
 			case 'b':
@@ -711,9 +738,15 @@ int main(int argc, char** argv)
 					"Options:\n"
 					"\t-d <device> | --device <device>\t\t"
 					"device in format 0000:00:00.0 (domain:bus:dev.func)\n"
-					"\t-r <filename> | --read <filename>\t"
+					"\t-n | --nodev\t"
+					"don't touch any device, file-only operations\n"
+					"\t-m | --preserve-mac\t"
+					"don't change card's MAC while writing full eeprom dump\n"
+					"\t-c | --preserve-calib\t"
+					"don't change calibration data while writing full eeprom dump\n"
+					"\t-o <filename> | --ofile <filename>\t"
 					"dump eeprom to binary file\n"
-					"\t-w <filename> | --write <filename>\t"
+					"\t-i <filename> | --ifile <filename>\t"
 					"write eeprom from binary file\n"
 					"\t-b | --bigendian\t\t\t"
 					"save dump in big-endian byteorder (default: little-endian)\n"
@@ -729,6 +762,8 @@ int main(int argc, char** argv)
 				return 1;
 		}
 	}
+
+	if (nodev) goto _nodev;
 
 	if (!dev.device) search_card();
 	if (!dev.device) exit(1);
@@ -766,6 +801,20 @@ int main(int argc, char** argv)
 		eeprom_patch11n();
 
 	release_card();
+	return 0;
+
+_nodev:
+	if (dev.device)
+		die("Don't use '-d' and '-n' options simultaneously\n");
+
+	printf("Device-less operation...\n");
+	if (!ifname || !ofname)
+		die("Have to specify both input and output files!\n");
+	init_dump(ifname);
+	if (patch11n)
+		eeprom_patch11n();
+
+	fixate_dump(ofname);
 	return 0;
 }
 
