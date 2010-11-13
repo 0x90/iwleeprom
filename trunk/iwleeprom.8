@@ -3,7 +3,7 @@
 .SH "NAME"
 iwleeprom \- EEPROM reader/writer for intel wifi cards
 .SH "SYNOPSIS"
-\fBiwleeprom [-d device] [-r filename [-b]] [-w filename] [-p] [-D]\fR
+\fBiwleeprom [-d device [-m] [-c] | -n] [-i filename] [-o filename [-b]] [-p] [-D]\fR
 .br
 \fBiwleeprom -l\fR
 .br
@@ -39,15 +39,27 @@ PCI device in following format:
 .I 0000:00:00.0
 (domain:bus:dev.func)
 .TP
-.B \-r \-\-read <output_file>
+.B \-n \-\-nodev
+don't touch any device, file-only operations
+.br
+.TP
+.B \-m \-\-preserve-mac
+don't change card's MAC while writing full eeprom dump
+.br
+.TP
+.B \-c \-\-preserve-calib
+don't change card's calibration data while writing full eeprom dump
+.br
+.TP
+.B \-o \-\-ofile <output_file>
 dump eeprom to binary file
 .TP
 .B \-b \-\-bigendian
 set output file byteorder to big-endian (default: little-endian)
 .br
-use with \fB\-r\fR
+use with \fB\-o\fR
 .TP
-.B \-w \-\-write <input_file>
+.B \-i \-\-ifile <input_file>
 write eeprom from binary file
 dump file byteorder will be autodetected
 .TP
@@ -55,6 +67,7 @@ dump file byteorder will be autodetected
 patch device eeprom to enable 802.11n.
 .br
 use this option to convert your 5100ABG/5150AGX to 5100AGN/5150ANX respectively
+if 802.11n already supported by your card, this will unlock some channels
 .TP
 .B \-D \-\-debug <level>
 set debug level (0-1), default 0
