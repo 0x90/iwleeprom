@@ -210,7 +210,7 @@ void init_dump(char *filename)
 	fclose(fd);
 	seteuid(suid);
 
-	printf("Dump file: %s (read %ld bytes)\n", filename, dev.eeprom_size);
+	printf("Dump file: %s (read %Ld bytes)\n", filename, (uint64_t) dev.eeprom_size);
 	if(dev.eeprom_size < EEPROM_SIZE_4965)
 		die("Too small file!\n");
 
@@ -318,7 +318,7 @@ void eeprom_read(char *filename)
 			buf[addr/2] = cpu2be16( eeprom_read16(addr) );
 		if (0 ==(addr & 0x7F)) printf("%04x [", addr);
 		printf(".");
-		if (0x7F ==(addr & 0x7F)) printf("]\n");
+		if (0x7E ==(addr & 0x7F)) printf("]\n");
 		fflush(stdout);
 	}
 
@@ -374,7 +374,7 @@ void eeprom_write(char *filename)
 		} else {
 			printf("=");
 		}
-		if (0x7F ==(addr & 0x7F)) printf("]\n");
+		if (0x7E ==(addr & 0x7F)) printf("]\n");
 		fflush(stdout);
 	}
 
