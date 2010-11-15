@@ -22,31 +22,21 @@
 
 #define _GNU_SOURCE
 
-#include <stdio.h>
-#include <stdbool.h>
-#include <unistd.h>
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <stdlib.h>
 #include <stdarg.h>
-#include <stdint.h>
-#include <string.h>
 #include <dirent.h>
 #include <getopt.h>
-#include <endian.h>
 
 //#define DEBUG
-#define MMAP_LENGTH 4096
-#define EEPROM_SIZE_4965 1024
-#define EEPROM_SIZE_5K   2048
 
-#define EEPROM_SIZE_MAX  2048
+#include "iwlio.h"
+#include "ath5kio.h"
+#include "ath9kio.h"
 
-#define IWL_SIGNATURE  0x5a40
-
-uint16_t buf[EEPROM_SIZE_MAX/2];
+extern uint16_t buf[EEPROM_SIZE_MAX/2];
 
 static struct option long_options[] = {
 	{"device",    1, NULL, 'd'},
@@ -64,39 +54,12 @@ static struct option long_options[] = {
 	{"patch11n",  0, NULL, 'p'}
 };
 
-struct pcidev_id
-{
-	unsigned int class,
-				ven,  dev,
-				sven, sdev;
-	int 	idx;
-	size_t  eeprom_size;
-	char *device;
-};
-
-struct pci_id
-{
-	unsigned int	ven, dev;
-	bool			writable;
-	size_t			eeprom_size;
-	char name[64];
-};
-
-enum byte_order
-{
-	order_unknown = 0,
-	order_be,
-	order_le
-};
-
 int mem_fd;
-char *mappedAddress;
 unsigned int offset;
-unsigned char eeprom_locked;
+bool eeprom_locked;
 enum byte_order dump_order;
 uid_t ruid,euid,suid;
 
-void die(  const char* format, ... ); 
 char	*ifname = NULL,
 		*ofname = NULL;
 bool patch11n = false,
@@ -106,78 +69,52 @@ bool patch11n = false,
 
 unsigned int  debug = 0;
 
-struct pcidev_id dev;
+uint16_t buf[EEPROM_SIZE_MAX/2];
+
+struct pcidev dev;
 
 #define DEVICES_PATH "/sys/bus/pci/devices"
 
 struct pci_id valid_ids[] = {
-	{ 0x8086, 0x0082, 0, EEPROM_SIZE_5K,   "6000 Series Gen2"},
-	{ 0x8086, 0x0083, 0, EEPROM_SIZE_5K,   "Centrino Wireless-N 1000"},
-	{ 0x8086, 0x0084, 0, EEPROM_SIZE_5K,   "Centrino Wireless-N 1000"},
-	{ 0x8086, 0x0085, 0, EEPROM_SIZE_5K,   "6000 Series Gen2"},
-	{ 0x8086, 0x0087, 0, EEPROM_SIZE_5K,   "Centrino Advanced-N + WiMAX 6250"},
-	{ 0x8086, 0x0089, 0, EEPROM_SIZE_5K,   "Centrino Advanced-N + WiMAX 6250"},
-	{ 0x8086, 0x0885, 0, EEPROM_SIZE_5K,   "WiFi+WiMAX 6050 Series Gen2"},
-	{ 0x8086, 0x0886, 0, EEPROM_SIZE_5K,   "WiFi+WiMAX 6050 Series Gen2"},
-	{ 0x8086, 0x4229, 1, EEPROM_SIZE_4965, "PRO/Wireless 4965 AG or AGN [Kedron] Network Connection"},
-	{ 0x8086, 0x422b, 0, EEPROM_SIZE_5K,   "Centrino Ultimate-N 6300"},
-	{ 0x8086, 0x422c, 0, EEPROM_SIZE_5K,   "Centrino Advanced-N 6200"},
-	{ 0x8086, 0x4230, 1, EEPROM_SIZE_4965, "PRO/Wireless 4965 AG or AGN [Kedron] Network Connection"},
-	{ 0x8086, 0x4232, 1, EEPROM_SIZE_5K,   "WiFi Link 5100"},
-	{ 0x8086, 0x4235, 1, EEPROM_SIZE_5K,   "Ultimate N WiFi Link 5300"},
-	{ 0x8086, 0x4236, 1, EEPROM_SIZE_5K,   "Ultimate N WiFi Link 5300"},
-	{ 0x8086, 0x4237, 1, EEPROM_SIZE_5K,   "PRO/Wireless 5100 AGN [Shiloh] Network Connection"},
-	{ 0x8086, 0x4238, 0, EEPROM_SIZE_5K,   "Centrino Ultimate-N 6300"},
-	{ 0x8086, 0x4239, 0, EEPROM_SIZE_5K,   "Centrino Advanced-N 6200"},
-	{ 0x8086, 0x423a, 1, EEPROM_SIZE_5K,   "PRO/Wireless 5350 AGN [Echo Peak] Network Connection"},
-	{ 0x8086, 0x423b, 1, EEPROM_SIZE_5K,   "PRO/Wireless 5350 AGN [Echo Peak] Network Connection"},
-	{ 0x8086, 0x423c, 1, EEPROM_SIZE_5K,   "WiMAX/WiFi Link 5150"},
-	{ 0x8086, 0x423d, 1, EEPROM_SIZE_5K,   "WiMAX/WiFi Link 5150"},
+/* Intel devices */
+	{ INTEL_PCI_VID,   0x0082, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "6000 Series Gen2"},
+	{ INTEL_PCI_VID,   0x0083, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "Centrino Wireless-N 1000"},
+	{ INTEL_PCI_VID,   0x0084, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "Centrino Wireless-N 1000"},
+	{ INTEL_PCI_VID,   0x0085, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "6000 Series Gen2"},
+	{ INTEL_PCI_VID,   0x0087, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "Centrino Advanced-N + WiMAX 6250"},
+	{ INTEL_PCI_VID,   0x0089, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "Centrino Advanced-N + WiMAX 6250"},
+	{ INTEL_PCI_VID,   0x0885, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "WiFi+WiMAX 6050 Series Gen2"},
+	{ INTEL_PCI_VID,   0x0886, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "WiFi+WiMAX 6050 Series Gen2"},
+	{ INTEL_PCI_VID,   0x4229, 1, IWL_EEPROM_SIZE_4965,	&dev_ops_iwl, "PRO/Wireless 4965 AG or AGN [Kedron] Network Connection"},
+	{ INTEL_PCI_VID,   0x422b, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "Centrino Ultimate-N 6300"},
+	{ INTEL_PCI_VID,   0x422c, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "Centrino Advanced-N 6200"},
+	{ INTEL_PCI_VID,   0x4230, 1, IWL_EEPROM_SIZE_4965,	&dev_ops_iwl, "PRO/Wireless 4965 AG or AGN [Kedron] Network Connection"},
+	{ INTEL_PCI_VID,   0x4232, 1, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "WiFi Link 5100"},
+	{ INTEL_PCI_VID,   0x4235, 1, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "Ultimate N WiFi Link 5300"},
+	{ INTEL_PCI_VID,   0x4236, 1, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "Ultimate N WiFi Link 5300"},
+	{ INTEL_PCI_VID,   0x4237, 1, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "PRO/Wireless 5100 AGN [Shiloh] Network Connection"},
+	{ INTEL_PCI_VID,   0x4238, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "Centrino Ultimate-N 6300"},
+	{ INTEL_PCI_VID,   0x4239, 0, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "Centrino Advanced-N 6200"},
+	{ INTEL_PCI_VID,   0x423a, 1, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "PRO/Wireless 5350 AGN [Echo Peak] Network Connection"},
+	{ INTEL_PCI_VID,   0x423b, 1, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "PRO/Wireless 5350 AGN [Echo Peak] Network Connection"},
+	{ INTEL_PCI_VID,   0x423c, 1, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "WiMAX/WiFi Link 5150"},
+	{ INTEL_PCI_VID,   0x423d, 1, IWL_EEPROM_SIZE_5K,	&dev_ops_iwl, "WiMAX/WiFi Link 5150"},
 
-	{ 0, 0, 0, 0, "" }
+/* Atheros devices */
+	{ ATHEROS_PCI_VID, 0x0023, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "AR5008 Wireless Adapter (PCI)" },
+	{ ATHEROS_PCI_VID, 0x0024, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "AR5008 Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x0027, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "AR9160 802.11abgn Wireless Adapter (PCI)" },
+	{ ATHEROS_PCI_VID, 0x0029, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "AR922X Wireless Adapter (PCI)" },
+	{ ATHEROS_PCI_VID, 0x002A, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "AR928X Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x002B, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "AR9285 Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x002C, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "AR2427 Wireless Adapter (PCI-E)" }, /* PCI-E 802.11n bonded out */
+	{ ATHEROS_PCI_VID, 0x002D, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "AR9287 Wireless Adapter (PCI)" }, /* PCI   */
+	{ ATHEROS_PCI_VID, 0x002E, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "AR9287 Wireless Adapter (PCI-E)" }, /* PCI-E */
+	{ ATHEROS_PCI_VID, 0x0030, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "AR9300 Wireless Adapter (PCI-E)" }, /* PCI-E  AR9300 */
+//	{ ATHEROS_PCI_VID, 0x0033, 0, ATH_EEPROM_SIZE, &dev_ops_ath9k, "11a/b/g/n Wireless LAN Mini-PCI Express Adapter" },
+
+	{ 0, 0, 0, 0, NULL, "" }
 };
-
-#if BYTE_ORDER == BIG_ENDIAN
-#define cpu2le16(x) __bswap_16(x)
-#define cpu2be16(x) x
-#define le2cpu16(x) __bswap_16(x)
-#define be2cpu16(x) x
-#elif BYTE_ORDER == LITTLE_ENDIAN
-#define cpu2le16(x) x
-#define cpu2be16(x) __bswap_16(x)
-#define le2cpu16(x) x
-#define be2cpu16(x) __bswap_16(x)
-#else
-#error Unsupported BYTE_ORDER!
-#endif
-
-void eeprom_lock()
-{
-	unsigned long data;
-	if (nodev) return;
-	memcpy(&data, mappedAddress, 4);
-	data |= 0x00200000;
-	memcpy(mappedAddress, &data, 4);
-	usleep(5);
-	memcpy(&data, mappedAddress, 4);
-	if ((data & 0x00200000) != 0x00200000)
-		die("err! ucode is using eeprom!\n");
-	eeprom_locked = 1;
-}
-
-void eeprom_unlock()
-{
-	unsigned long data;
-	if (nodev) return;
-	memcpy(&data, mappedAddress, 4);
-	data &= ~0x00200000;
-	memcpy(mappedAddress, &data, 4);
-	usleep(5);
-	memcpy(&data, mappedAddress, 4);
-	if ((data & 0x00200000) == 0x00200000)
-		die("err! software is still using eeprom!\n");
-	eeprom_locked = 0;
-}
 
 void init_card()
 {
@@ -186,8 +123,8 @@ void init_card()
 		exit(1);
 	}
 
-	mappedAddress = (char *)mmap(NULL, MMAP_LENGTH, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED, mem_fd, offset);
-	if (mappedAddress == MAP_FAILED) {
+	dev.mem = (unsigned char *)mmap(NULL, dev.ops->mmap_size, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED, mem_fd, offset);
+	if (dev.mem == MAP_FAILED) {
 		perror("mmap failed");
 		exit(1);
 	}
@@ -195,28 +132,28 @@ void init_card()
 
 void release_card()
 {
-	if (mappedAddress != NULL)
-		munmap(mappedAddress, MMAP_LENGTH);
+	if (dev.mem != NULL)
+		munmap(dev.mem, dev.ops->mmap_size);
 }
 
-void init_dump(char *filename)
+void init_dump(struct pcidev *dev, char *filename)
 {
 	FILE *fd;
 
 	seteuid(ruid);
 	if (!(fd = fopen(filename, "rb")))
 		die("Can't read file %s\n", filename);
-	dev.eeprom_size = 2 * fread(buf, 2, EEPROM_SIZE_MAX/2, fd);
+	dev->eeprom_size = 2 * fread(buf, 2, EEPROM_SIZE_MAX/2, fd);
 	fclose(fd);
 	seteuid(suid);
 
-	printf("Dump file: %s (read %Ld bytes)\n", filename, (uint64_t) dev.eeprom_size);
-	if(dev.eeprom_size < EEPROM_SIZE_4965)
+	printf("Dump file: %s (read %Ld bytes)\n", filename, (uint64_t) dev->eeprom_size);
+	if(dev->eeprom_size < IWL_EEPROM_SIZE_4965)
 		die("Too small file!\n");
 
-	if ( IWL_SIGNATURE == le2cpu16(buf[0])) {
+	if ( dev->ops->eeprom_signature == le2cpu16(buf[0])) {
 		dump_order = order_le;
-	} else if ( IWL_SIGNATURE == be2cpu16(buf[0])) {
+	} else if ( dev->ops->eeprom_signature == be2cpu16(buf[0])) {
 		dump_order = order_be;
 	} else {
 		die("Invalid EEPROM signature!\n");
@@ -224,36 +161,23 @@ void init_dump(char *filename)
 	printf("  byte order: %s ENDIAN\n", (dump_order == order_le) ? "LITTLE":"BIG");
 }
 
-void fixate_dump(char *filename)
+void fixate_dump(struct pcidev *dev, char *filename)
 {
 	FILE *fd;
 	seteuid(ruid);
 
 	if (!(fd = fopen(filename, "wb")))
 		die("Can't create file %s\n", filename);
-	fwrite(buf, dev.eeprom_size, 1, fd);
+	fwrite(buf, dev->eeprom_size, 1, fd);
 	printf("Dump file written: %s\n", filename);
 	fclose(fd);
 
 	seteuid(suid);
 }
 
-const uint16_t eeprom_read16(unsigned int addr)
+
+const uint16_t buf_read16(unsigned int addr)
 {
-	uint16_t value;
-	if (nodev) goto _nodev;
-
-	unsigned int data = 0x0000FFFC & (addr << 1);
-	memcpy(mappedAddress + 0x2c, &data, 4);
-	usleep(50);
-	memcpy(&data, mappedAddress + 0x2c, 4);
-	if ((data & 1) != 1)
-		die("Read not complete! Timeout at %.4dx\n", addr);
-
-	value = (data & 0xFFFF0000) >> 16;
-	return value;
-
-_nodev:
 	if (addr >= EEPROM_SIZE_MAX) return 0;
 	if (dump_order == order_le)
 		return (le2cpu16(buf[addr/2]));
@@ -261,33 +185,8 @@ _nodev:
 		return (be2cpu16(buf[addr/2]));
 }
 
-void eeprom_write16(unsigned int addr, uint16_t value)
+void buf_write16(unsigned int addr, uint16_t value)
 {
-	if (nodev) goto _nodev;
-	unsigned int data = value;
-
-	if (preserve_mac && ((addr>=0x2A && addr<0x30) || (addr>=0x92 && addr<0x97)))
-		return;
-	if (preserve_calib && (addr >= 0x200))
-		return;
-
-	data <<= 16;
-	data |= 0x0000FFFC & (addr << 1);
-	data |= 0x2;
-
-	memcpy(mappedAddress + 0x2c, &data, 4);
-	usleep(5000);
-
-	data = 0x0000FFC & (addr << 1);
-	memcpy(mappedAddress + 0x2c, &data, 4);
-	usleep(50);
-	memcpy(&data, mappedAddress + 0x2c, 4);
-	if ((data & 1) != 1)
-		die("Read not complete! Timeout at %.4dx\n", addr);
-	if (value != (data >> 16))
-		die("Verification error at %.4x\n", addr);
-	return;
-_nodev:
 	if (addr >= EEPROM_SIZE_MAX) return;
 	if (dump_order == order_le)
 		buf[addr/2] = cpu2le16(value);
@@ -306,16 +205,16 @@ void eeprom_read(char *filename)
 		die("Can't create file %s\n", filename);
 	seteuid(suid);
 
-	eeprom_lock();
+	dev.ops->eeprom_lock(&dev);
 
 	printf("Saving dump with byte order: %s ENDIAN\n", (dump_order == order_le) ? "LITTLE":"BIG");
 
 	for (addr = 0; addr < dev.eeprom_size; addr += 2)
 	{
 		if (dump_order == order_le)
-			buf[addr/2] = cpu2le16( eeprom_read16(addr) );
+			buf[addr/2] = cpu2le16( dev.ops->eeprom_read16(&dev, addr) );
 		else
-			buf[addr/2] = cpu2be16( eeprom_read16(addr) );
+			buf[addr/2] = cpu2be16( dev.ops->eeprom_read16(&dev, addr) );
 		if (0 ==(addr & 0x7F)) printf("%04x [", addr);
 		printf(".");
 		if (0x7E ==(addr & 0x7F)) printf("]\n");
@@ -327,7 +226,7 @@ void eeprom_read(char *filename)
 	fclose(fd);
 	seteuid(suid);
 
-	eeprom_unlock();
+	dev.ops->eeprom_unlock(&dev);
 
 	printf("\nEEPROM has been dumped to %s\n", filename);
 }
@@ -348,14 +247,14 @@ void eeprom_write(char *filename)
 	fclose(fd);
 	seteuid(suid);
 
-	eeprom_lock();	
+	dev.ops->eeprom_lock(&dev);
 
 	for(addr=0; addr<size;addr+=2)
 	{
 		if (order == order_unknown) {
-			if ( IWL_SIGNATURE == le2cpu16(buf[addr/2])) {
+			if ( dev.ops->eeprom_signature == le2cpu16(buf[addr/2])) {
 				order = order_le;
-			} else if ( IWL_SIGNATURE == be2cpu16(buf[addr/2])) {
+			} else if ( dev.ops->eeprom_signature == be2cpu16(buf[addr/2])) {
 				order = order_be;
 			} else {
 				die("Invalid EEPROM signature!\n");
@@ -368,8 +267,8 @@ void eeprom_write(char *filename)
 			value = le2cpu16( buf[addr/2] );
 
 		if (0 ==(addr & 0x7F)) printf("%04x [", addr);
-		if (eeprom_read16(addr) != value) {
-			eeprom_write16(addr, value);
+		if (dev.ops->eeprom_read16(&dev, addr) != value) {
+			dev.ops->eeprom_write16(&dev, addr, value);
 			printf(".");
 		} else {
 			printf("=");
@@ -378,158 +277,11 @@ void eeprom_write(char *filename)
 		fflush(stdout);
 	}
 
-	eeprom_unlock();
+	dev.ops->eeprom_unlock(&dev);
 
 	printf("\nEEPROM has been written from %s\n", filename);
 }
 
-
-struct regulatory_item
-{
-	unsigned int addr;
-	uint16_t	 data;
-	uint16_t	 chn;
-};
-
-
-#define HT40 0x100
-struct regulatory_item regulatory[] =
-{
-/*
-	BAND 2.4GHz (@15e-179 with regulatory base @156)
-*/
-// enabling channels 12-14 (1-11 should be enabled on all cards)
-	{ 0x1E, 0x0f21, 12 },
-	{ 0x20, 0x0f21, 13 },
-	{ 0x22, 0x0f21, 14 },
-
-/*
-	BAND 5GHz
-*/
-// subband 5170-5320 MHz (@198-1af)
-//	{ 0x42, 0x0fe1, 34 },
-	{ 0x44, 0x0fe1, 36 },
-//	{ 0x46, 0x0fe1, 38 },
-	{ 0x48, 0x0fe1, 40 },
-//	{ 0x4a, 0x0fe1, 42 },
-	{ 0x4c, 0x0fe1, 44 },
-//	{ 0x4e, 0x0fe1, 46 },
-	{ 0x50, 0x0fe1, 48 },
-	{ 0x52, 0x0f31, 52 },
-	{ 0x54, 0x0f31, 56 },
-	{ 0x56, 0x0f31, 60 },
-	{ 0x58, 0x0f31, 64 },
-
-// subband 5500-5700 MHz (@1b2-1c7)
-	{ 0x5c, 0x0f31, 100 },
-	{ 0x5e, 0x0f31, 104 },
-	{ 0x60, 0x0f31, 108 },
-	{ 0x62, 0x0f31, 112 },
-	{ 0x64, 0x0f31, 116 },
-	{ 0x66, 0x0f31, 120 },
-	{ 0x68, 0x0f31, 124 },
-	{ 0x6a, 0x0f31, 128 },
-	{ 0x6c, 0x0f31, 132 },
-	{ 0x6e, 0x0f31, 136 },
-	{ 0x70, 0x0f31, 140 },
-
-// subband 5725-5825 MHz (@1ca-1d5)
-//	{ 0x74, 0x0fa1, 145 },
-	{ 0x76, 0x0fa1, 149 },
-	{ 0x78, 0x0fa1, 153 },
-	{ 0x7a, 0x0fa1, 157 },
-	{ 0x7c, 0x0fa1, 161 },
-	{ 0x7e, 0x0fa1, 165 },
-
-/*
-	BAND 2.4GHz, HT40 channels (@1d8-1e5)
-*/
-	{ 0x82, 0x0e6f, HT40 + 1 },
-	{ 0x84, 0x0f6f, HT40 + 2 },
-	{ 0x86, 0x0f6f, HT40 + 3 },
-	{ 0x88, 0x0f6f, HT40 + 4 },
-	{ 0x8a, 0x0f6f, HT40 + 5 },
-	{ 0x8c, 0x0f6f, HT40 + 6 },
-	{ 0x8e, 0x0f6f, HT40 + 7 },
-
-/*
-	BAND 5GHz, HT40 channels (@1e8-1fd)
-*/
-	{ 0x92, 0x0fe1, HT40 +  36 },
-	{ 0x94, 0x0fe1, HT40 +  44 },
-	{ 0x96, 0x0f31, HT40 +  52 },
-	{ 0x98, 0x0f31, HT40 +  60 },
-	{ 0x9a, 0x0f31, HT40 + 100 },
-	{ 0x9c, 0x0f31, HT40 + 108 },
-	{ 0x9e, 0x0f31, HT40 + 116 },
-	{ 0xa0, 0x0f31, HT40 + 124 },
-	{ 0xa2, 0x0f31, HT40 + 132 },
-	{ 0xa4, 0x0f61, HT40 + 149 },
-	{ 0xa6, 0x0f61, HT40 + 157 },
-
-	{ 0, 0}
-};
-
-void eeprom_patch11n()
-{
-	uint16_t value;
-	unsigned int reg_offs;
-	int idx;
-
-	printf("Patching card EEPROM...\n");
-
-	eeprom_lock();	
-
-	printf("-> Changing subdev ID\n");
-	value = eeprom_read16(0x14);
-	if ((value & 0x000F) == 0x0006) {
-		eeprom_write16(0x14, (value & 0x000F) | 0x0001);
-	}
-/*
-enabling .11n
-
-W @8A << 00F0 (00B0) <- xxxx xxxx x1xx xxxx
-W @8C << 103E (603F) <- x001 xxxx xxxx xxx0
-*/
-
-	printf("-> Enabling 11n mode\n");
-// SKU_CAP
-	value = eeprom_read16(0x8A);
-	if ((value & 0x0040) != 0x0040) {
-		printf("  SKU CAP\n");
-		eeprom_write16(0x8A, value | 0x0040);
-	}
-
-// OEM_MODE
-	value = eeprom_read16(0x8C);
-	if ((value & 0x7001) != 0x1000) {
-		printf("  OEM MODE\n");
-		eeprom_write16(0x8C, (value & 0x9FFE) | 0x1000);
-	}
-
-/*
-writing SKU ID - 'MoW' signature
-*/
-	if (eeprom_read16(0x158) != 0x6f4d) eeprom_write16(0x158, 0x6f4d);
-	if (eeprom_read16(0x15A) != 0x0057) eeprom_write16(0x15A, 0x0057);
-
-	printf("-> Checking and adding channels...\n");
-// reading regulatory offset
-	reg_offs = 2 * eeprom_read16(0xCC);
-	printf("Regulatory base: %04x\n", reg_offs);
-/*
-writing channels regulatory...
-*/
-	for (idx=0; regulatory[idx].addr; idx++) {
-		if (eeprom_read16(reg_offs + regulatory[idx].addr) != regulatory[idx].data) {
-			printf("  %d%s\n", regulatory[idx].chn & ~HT40, (regulatory[idx].chn & HT40) ? " (HT40)" : "");
-			eeprom_write16(reg_offs + regulatory[idx].addr, regulatory[idx].data);
-		}
-	}
-
-	eeprom_unlock();
-	printf("\nCard EEPROM patched successfully\n");
-}
 
 void die(  const char* format, ... ) {
 	va_list args;
@@ -556,7 +308,7 @@ unsigned int read_id(const char *device, const char* param)
 	return id;
 }
 
-void check_device(struct pcidev_id *id)
+void check_device(struct pcidev *id)
 {
 	int i;
 
@@ -571,8 +323,10 @@ void check_device(struct pcidev_id *id)
 	id->sdev  = read_id(id->device,"subsystem_device");
 
 	for(i=0; id->idx<0 && valid_ids[i].ven; i++)
-		if(id->ven==valid_ids[i].ven && id->dev==valid_ids[i].dev)
+		if(id->ven==valid_ids[i].ven && id->dev==valid_ids[i].dev) {
 			id->idx = i;
+			id->ops = valid_ids[i].ops;
+		}
 }
 
 void list_supported()
@@ -611,8 +365,8 @@ void search_card()
 {
 	DIR  *dir;
 	struct dirent *dentry;
-	struct pcidev_id id;
-	struct pcidev_id *ids = NULL;
+	struct pcidev id;
+	struct pcidev *ids = NULL;
 	int i,cnt=0;
 
 	dir = opendir(DEVICES_PATH);
@@ -644,9 +398,9 @@ void search_card()
 		}
 		if (id.idx >=0 ) {
 			if(!cnt)
-				ids = (struct pcidev_id*) malloc(sizeof(id));
+				ids = (struct pcidev*) malloc(sizeof(id));
 			else
-				ids = (struct pcidev_id*) realloc(ids, (cnt+1)*sizeof(id));
+				ids = (struct pcidev*) realloc(ids, (cnt+1)*sizeof(id));
 			ids[cnt].device = (char*) malloc(256 * sizeof(char));
 			ids[cnt].class = id.class;
 			ids[cnt].ven = id.ven; ids[cnt].sven = id.sven;
@@ -692,6 +446,7 @@ int main(int argc, char** argv)
 {
 	char c;
 	dev.device = NULL;
+	dev.mem    = NULL;
 	dump_order = order_le;
 	getresuid(&ruid, &euid, &suid);
 
@@ -806,7 +561,7 @@ int main(int argc, char** argv)
 		eeprom_write(ifname);
 
 	if (patch11n && valid_ids[dev.idx].writable)
-		eeprom_patch11n();
+		dev.ops->eeprom_patch11n(&dev);
 
 	release_card();
 	return 0;
@@ -818,11 +573,12 @@ _nodev:
 	printf("Device-less operation...\n");
 	if (!ifname || !ofname)
 		die("Have to specify both input and output files!\n");
-	init_dump(ifname);
-	if (patch11n)
-		eeprom_patch11n();
+	init_dump(&dev, ifname);
 
-	fixate_dump(ofname);
+	if (patch11n && dev.ops && dev.ops->eeprom_patch11n)
+		dev.ops->eeprom_patch11n(&dev);
+
+	fixate_dump(&dev, ofname);
 	return 0;
 }
 
