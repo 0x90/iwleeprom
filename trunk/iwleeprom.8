@@ -3,7 +3,7 @@
 .SH "NAME"
 iwleeprom \- EEPROM reader/writer for intel wifi cards
 .SH "SYNOPSIS"
-\fBiwleeprom [-d device [-m] [-c] | -n] [-i filename] [-o filename [-b]] [-p] [-D]\fR
+\fBiwleeprom [-d device [-m] [-c] | -n] [-i filename] [-o filename [-b]] [-p] [-I] [-D]\fR
 .br
 \fBiwleeprom -l\fR
 .br
@@ -68,6 +68,11 @@ patch device eeprom to enable 802.11n.
 .br
 use this option to convert your 5100ABG/5150AGX to 5100AGN/5150ANX respectively
 if 802.11n already supported by your card, this will unlock some channels
+.TP
+.B \-I \-\-init
+init device power.
+.br
+use this option if driver hasn't inited the device (for ex. if it has wrong dev_id or subsys_id)
 .TP
 .B \-D \-\-debug <level>
 set debug level (0-1), default 0
