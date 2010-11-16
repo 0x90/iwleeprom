@@ -69,6 +69,11 @@ patch device eeprom to enable 802.11n.
 use this option to convert your 5100ABG/5150AGX to 5100AGN/5150ANX respectively
 if 802.11n already supported by your card, this will unlock some channels
 .TP
+.B \-I \-\-init
+init device power.
+.br
+use this option if driver hasn't inited the device (for ex. if it has wrong dev_id or subsys_id)
+.TP
 .B \-D \-\-debug <level>
 set debug level (0-1), default 0
 .br

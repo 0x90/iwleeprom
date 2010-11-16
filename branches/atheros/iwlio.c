@@ -22,6 +22,9 @@
 
 #include "iwlio.h"
 
+#define IWL_EEPROM_SIZE_4965 0x400
+#define IWL_EEPROM_SIZE_5K   0x800
+
 #define IWL_EEPROM_SIGNATURE   0x5a40
 #define IWL_MMAP_LENGTH 0x1000
 
@@ -37,7 +40,7 @@ struct iwl_regulatory_item
 
 
 #define HT40 0x100
-struct iwl_regulatory_item iwl_regulatory[] =
+static struct iwl_regulatory_item iwl_regulatory[] =
 {
 /*
 	BAND 2.4GHz (@15e-179 with regulatory base @156)
@@ -114,35 +117,72 @@ struct iwl_regulatory_item iwl_regulatory[] =
 	{ 0, 0}
 };
 
-void iwl_eeprom_lock(struct pcidev *dev)
+
+static void iwl_init_device(struct pcidev *dev)
+{
+	unsigned int data;
+	memcpy(&data, dev->mem + 0x100, 4);
+	data |= 0x20000000;
+	memcpy(dev->mem + 0x100, &data, 4);
+	usleep(20);
+	memcpy(&data, dev->mem + 0x100, 4);
+	data |= 0x00800000;
+	memcpy(dev->mem + 0x100, &data, 4);
+	usleep(20);
+	memcpy(&data, dev->mem + 0x240, 4);
+	data |= 0xFFFF0000;
+	memcpy(dev->mem + 0x240, &data, 4);
+	usleep(20);
+	memcpy(&data, dev->mem + 0x00, 4);
+	data |= 0x00080000;
+	memcpy(dev->mem + 0x00, &data, 4);
+	usleep(20);
+	memcpy(&data, dev->mem + 0x20c, 4);
+	data |= 0x00880300;
+	memcpy(dev->mem + 0x20c, &data, 4);
+	usleep(20);
+	memcpy(&data, dev->mem + 0x24, 4);
+	data |= 0x00000004;
+	memcpy(dev->mem + 0x24, &data, 4);
+	usleep(20);
+
+	if (debug)
+		printf("Device has been inited.\n");
+}
+
+static bool iwl_eeprom_lock(struct pcidev *dev)
 {
 	unsigned long data;
-	if (!dev->mem) return;
+	if (!dev->mem) return false;
 	memcpy(&data, dev->mem, 4);
 	data |= 0x00200000;
 	memcpy(dev->mem, &data, 4);
 	usleep(5);
 	memcpy(&data, dev->mem, 4);
-	if ((data & 0x00200000) != 0x00200000)
-		die("err! ucode is using eeprom!\n");
-	dev->eeprom_locked = 1;
+
+	dev->eeprom_locked = ( 0x00200000 == (data & 0x00200000));
+	if (!dev->eeprom_locked)
+		printf("err! ucode is using eeprom!\n");
+	return (dev->eeprom_locked);
 }
 
-void iwl_eeprom_unlock(struct pcidev *dev)
+static bool iwl_eeprom_release(struct pcidev *dev)
 {
 	unsigned long data;
-	if (!dev->mem) return;
+	if (!dev->mem) return false;
 	memcpy(&data, dev->mem, 4);
 	data &= ~0x00200000;
 	memcpy(dev->mem, &data, 4);
 	usleep(5);
 	memcpy(&data, dev->mem, 4);
-	if ((data & 0x00200000) == 0x00200000)
-		die("err! software is still using eeprom!\n");
+	dev->eeprom_locked = ( 0x00200000 == (data & 0x00200000));
+	if (dev->eeprom_locked)
+		printf("err! software is still using eeprom!\n");
 	dev->eeprom_locked = 0;
+	return (!dev->eeprom_locked);
 }
 
-const uint16_t iwl_eeprom_read16(struct pcidev *dev, unsigned int addr)
+static const uint16_t iwl_eeprom_read16(struct pcidev *dev, unsigned int addr)
 {
 	uint16_t value;
 	unsigned int data = 0x0000FFFC & (addr << 1);
@@ -153,13 +193,13 @@ const uint16_t iwl_eeprom_read16(struct pcidev *dev, unsigned int addr)
 	usleep(50);
 	memcpy(&data, dev->mem + CSR_EEPROM_REG, 4);
 	if ((data & 1) != 1)
-		die("Read not complete! Timeout at %.4dx\n", addr);
+		die("Read not complete! Timeout at %04x\n", addr);
 
 	value = (data & 0xFFFF0000) >> 16;
 	return value;
 }
 
-void iwl_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
+static void iwl_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
 {
 	if (!dev->mem) {
 		buf_write16(addr, value);
@@ -185,13 +225,14 @@ void iwl_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
 	usleep(50);
 	memcpy(&data, dev->mem + CSR_EEPROM_REG, 4);
 	if ((data & 1) != 1)
-		die("Read not complete! Timeout at %.4dx\n", addr);
+		die("Read not complete! Timeout at %04x\n", addr);
+
 	if (value != (data >> 16))
-		die("Verification error at %.4x\n", addr);
+		die("Verification error at %04x\n", addr);
 	return;
 }
 
-void iwl_eeprom_patch11n(struct pcidev *dev)
+static void iwl_eeprom_patch11n_5k(struct pcidev *dev)
 {
 	uint16_t value;
 	unsigned int reg_offs;
@@ -199,7 +240,8 @@ void iwl_eeprom_patch11n(struct pcidev *dev)
 
 	printf("Patching card EEPROM...\n");
 
-	dev->ops->eeprom_lock(dev);	
+	if (!dev->ops->eeprom_lock(dev))
+		return;
 
 	printf("-> Changing subdev ID\n");
 	value = dev->ops->eeprom_read16(dev, 0x14);
@@ -250,18 +292,68 @@ writing channels regulatory...
 		}
 	}
 
-	dev->ops->eeprom_unlock(dev);
+	dev->ops->eeprom_release(dev);
 	printf("\nCard EEPROM patched successfully\n");
 }
 
-struct dev_ops dev_ops_iwl = {
-	.mmap_size        = IWL_MMAP_LENGTH,
-	.eeprom_signature = IWL_EEPROM_SIGNATURE,
+static void iwl_eeprom_parse_5k(struct pcidev *dev)
+{
+	bool mode11n;
 
+	mode11n = (0x0040 == (dev->ops->eeprom_read16(dev, 0x8A) & 0x0040)) &&
+	 		  (0x1000 == (dev->ops->eeprom_read16(dev, 0x8C) & 0x7001)) &&
+			  (0x6f4d == dev->ops->eeprom_read16(dev, 0x158)) &&
+			  (0x0057 == (dev->ops->eeprom_read16(dev, 0x15A) & 0x00FF));
+
+	printf("Mode 802.11n: %sabled\n", mode11n ? "en" : "dis");
+//	printf("Enabled channels:\n");
+}
+
+struct dev_ops dev_ops_iwl4965 = {
+	.name             = "iwl4965",
+	.mmap_size        = IWL_MMAP_LENGTH,
+	.eeprom_size      = IWL_EEPROM_SIZE_4965,
+	.eeprom_signature = IWL_EEPROM_SIGNATURE,
+	.eeprom_writable  = true,
+
+	.init_device     = &iwl_init_device,
 	.eeprom_lock     = &iwl_eeprom_lock,
-	.eeprom_unlock   = &iwl_eeprom_unlock,
+	.eeprom_release  = &iwl_eeprom_release,
 	.eeprom_read16   = &iwl_eeprom_read16,
 	.eeprom_write16  = &iwl_eeprom_write16,
-	.eeprom_patch11n = &iwl_eeprom_patch11n
+	.eeprom_patch11n = NULL,
+	.eeprom_parse    = NULL
+};
+
+struct dev_ops dev_ops_iwl5k = {
+	.name             = "iwl5k",
+	.mmap_size        = IWL_MMAP_LENGTH,
+	.eeprom_size      = IWL_EEPROM_SIZE_5K,
+	.eeprom_signature = IWL_EEPROM_SIGNATURE,
+	.eeprom_writable  = true,
+
+	.init_device     = &iwl_init_device,
+	.eeprom_lock     = &iwl_eeprom_lock,
+	.eeprom_release  = &iwl_eeprom_release,
+	.eeprom_read16   = &iwl_eeprom_read16,
+	.eeprom_write16  = &iwl_eeprom_write16,
+	.eeprom_patch11n = &iwl_eeprom_patch11n_5k,
+	.eeprom_parse    = &iwl_eeprom_parse_5k
+};
+
+struct dev_ops dev_ops_iwl6k = {
+	.name             = "iwl6k",
+	.mmap_size        = IWL_MMAP_LENGTH,
+	.eeprom_size      = IWL_EEPROM_SIZE_5K,
+	.eeprom_signature = IWL_EEPROM_SIGNATURE,
+	.eeprom_writable  = false,
+
+	.init_device     = &iwl_init_device,
+	.eeprom_lock     = &iwl_eeprom_lock,
+	.eeprom_release  = &iwl_eeprom_release,
+	.eeprom_read16   = &iwl_eeprom_read16,
+	.eeprom_write16  = &iwl_eeprom_write16,
+	.eeprom_patch11n = &iwl_eeprom_patch11n_5k,
+	.eeprom_parse    = &iwl_eeprom_parse_5k
 };
 

@@ -1,50 +1,36 @@
 SBINDIR=/usr/local/sbin
 MANDIR=/usr/share/man/man8
-#CXXFLAGS+=-g
+OBJDIR=obj
 
-all: iwleeprom iwleeprom.8.gz
+all: $(OBJDIR) iwleeprom iwleeprom.8.gz
 
-debug: iwleeprom_debug
+debug:
+		CFLAGS="-g $(CFLAGS)" make all
 
-iwleeprom_debug: iwlio_debug.o ath5kio_debug.o ath9kio_debug.o iwleeprom_debug.o
-		gcc -Wall -g -o iwleeprom_debug iwleeprom_debug.o iwlio_debug.o ath5kio_debug.o ath9kio_debug.o
+$(OBJDIR):
+		mkdir $(OBJDIR)
 
-iwleeprom_debug.o: iwleeprom.h iwlio.h ath5kio.h ath9kio.h iwleeprom.c
-		gcc -Wall -g -c -o iwleeprom_debug.o iwleeprom.c
+iwleeprom: $(OBJDIR)/iwlio.o $(OBJDIR)/ath5kio.o $(OBJDIR)/ath9kio.o $(OBJDIR)/iwleeprom.o
+		gcc -Wall $(CFLAGS) -o iwleeprom $(OBJDIR)/iwleeprom.o $(OBJDIR)/iwlio.o $(OBJDIR)/ath5kio.o $(OBJDIR)/ath9kio.o
 
-iwlio_debug.o: iwleeprom.h iwlio.h iwlio.c
-		gcc -Wall -g -c -o iwlio_debug.o iwlio.c
+$(OBJDIR)/iwleeprom.o: iwleeprom.h iwlio.h ath5kio.h ath9kio.h iwleeprom.c
+		gcc -Wall $(CFLAGS) -c -o $(OBJDIR)/iwleeprom.o iwleeprom.c
 
-ath5kio_debug.o: iwleeprom.h ath5kio.h ath5kio.c
-		gcc -Wall -g -c -o ath5kio_debug.o ath5kio.c
+$(OBJDIR)/iwlio.o: iwleeprom.h iwlio.h iwlio.c
+		gcc -Wall $(CFLAGS) -c -o $(OBJDIR)/iwlio.o iwlio.c
 
-ath9kio_debug.o: iwleeprom.h ath9kio.h ath9kio.c
-		gcc -Wall -g -c -o ath9kio_debug.o ath9kio.c
+$(OBJDIR)/ath5kio.o: iwleeprom.h ath5kio.h ath5kio.c
+		gcc -Wall $(CFLAGS) -c -o $(OBJDIR)/ath5kio.o ath5kio.c
 
-iwleeprom: iwlio.o ath5kio.o ath9kio.o iwleeprom.o
-		gcc -Wall -o iwleeprom iwleeprom.o iwlio.o ath5kio.o ath9kio.o
-
-iwleeprom.o: iwleeprom.h iwlio.h ath5kio.h ath9kio.h iwleeprom.c
-		gcc -Wall -c -o iwleeprom.o iwleeprom.c
-
-iwlio.o: iwleeprom.h iwlio.h iwlio.c
-		gcc -Wall -c -o iwlio.o iwlio.c
-
-ath5kio.o: iwleeprom.h ath5kio.h ath5kio.c
-		gcc -Wall -c -o ath5kio.o ath5kio.c
-
-ath9kio.o: iwleeprom.h ath9kio.h ath9kio.c
-		gcc -Wall -c -o ath9kio.o ath9kio.c
+$(OBJDIR)/ath9kio.o: iwleeprom.h ath9kio.h ath9kio.c
+		gcc -Wall $(CFLAGS) -c -o $(OBJDIR)/ath9kio.o ath9kio.c
 
 iwleeprom.8.gz: iwleeprom.8
 		gzip -c iwleeprom.8 > iwleeprom.8.gz
 
 clean:
-		rm -f iwleeprom
-		rm -f iwleeprom_debug
-		rm -f iwleeprom.8.gz
-		rm -f *.o
-		rm -f *~
+		rm -f iwleeprom iwleeprom.8.gz *~
+		rm -rf $(OBJDIR)
 
 install: all
 		install -m 4755 iwleeprom $(SBINDIR)

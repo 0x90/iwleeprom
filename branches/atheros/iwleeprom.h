@@ -45,13 +45,16 @@
 #error Unsupported BYTE_ORDER!
 #endif
 
+/* PCI R/W macros */
+#define PCI_IN32(_dev,a)    (*((volatile unsigned long int *)(_dev->mem + (a))))
+#define PCI_OUT32(_dev,v,a) (*((volatile unsigned long int *)(_dev->mem + (a))) = (v))
+
 struct pcidev
 {
 	unsigned int class,
 				ven,  dev,
 				sven, sdev;
 	int 			idx;
-	size_t 			eeprom_size;
 	char			*device;
 
 	struct dev_ops	*ops;
@@ -62,8 +65,6 @@ struct pcidev
 struct pci_id
 {
 	unsigned int	ven, dev;
-	bool			writable;
-	size_t			eeprom_size;
 	struct dev_ops	*ops;
 	char name[64];
 };
@@ -76,7 +77,6 @@ enum byte_order
 };
 
 extern unsigned int  debug;
-#define EEPROM_SIZE_MIN  0x400
 #define EEPROM_SIZE_MAX  0x800
 
 extern uint16_t buf[EEPROM_SIZE_MAX/2];
@@ -90,22 +90,30 @@ void die(  const char* format, ... );
 extern const uint16_t buf_read16(unsigned int addr);
 extern void buf_write16(unsigned int addr, uint16_t value);
 
-typedef void (*eeprom_lock_t)(struct pcidev *dev);
-typedef void (*eeprom_unlock_t)(struct pcidev *dev);
+typedef bool (*init_device_t)(struct pcidev *dev);
+typedef bool (*eeprom_lock_t)(struct pcidev *dev);
+typedef bool (*eeprom_release_t)(struct pcidev *dev);
 typedef const uint16_t (*eeprom_read16_t)(struct pcidev *dev, unsigned int addr);
 typedef void (*eeprom_write16_t)(struct pcidev *dev, unsigned int addr, uint16_t value);
 
 typedef void (*eeprom_patch11n_t)(struct pcidev *dev);
+typedef void (*eeprom_parse_t)(struct pcidev *dev);
 
 struct dev_ops {
+	const char*		  name;
 	uint32_t		  mmap_size;
+	uint32_t		  eeprom_size;
 	uint16_t		  eeprom_signature;
+	bool			  eeprom_writable;
 
-	eeprom_lock_t     eeprom_lock;
-	eeprom_unlock_t   eeprom_unlock;
-	eeprom_read16_t   eeprom_read16;
-	eeprom_write16_t  eeprom_write16;
-	eeprom_patch11n_t eeprom_patch11n;
+	void (*init_device)(struct pcidev *dev);
+	bool (*eeprom_lock)(struct pcidev *dev);
+	bool (*eeprom_release)(struct pcidev *dev);
+	const uint16_t (*eeprom_read16)(struct pcidev *dev, unsigned int addr);
+	void (*eeprom_write16)(struct pcidev *dev, unsigned int addr, uint16_t value);
+
+	void (*eeprom_patch11n)(struct pcidev *dev);
+	void (*eeprom_parse)(struct pcidev *dev);
 };
 
 #endif

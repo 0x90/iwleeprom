@@ -25,10 +25,10 @@
 #include "iwleeprom.h"
 
 #define INTEL_PCI_VID       0x8086
-#define IWL_EEPROM_SIZE_4965 0x400
-#define IWL_EEPROM_SIZE_5K   0x800
 
-extern struct dev_ops dev_ops_iwl;
+extern struct dev_ops dev_ops_iwl4965;
+extern struct dev_ops dev_ops_iwl5k;
+extern struct dev_ops dev_ops_iwl6k;
 
 #endif
 

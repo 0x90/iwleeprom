@@ -39,11 +39,11 @@
 
 #include "ath5kio.h"
 
+#define ATH5K_EEPROM_SIZE  0x800
+
 #define ATH_EEPROM_SIGNATURE    0x7801
 #define ATH_MMAP_LENGTH 0x10000
 
-
-/* ATH5K defines */
 #define AR5K_PCICFG 0x4010 
 #define AR5K_PCICFG_EEAE 0x00000001 
 #define AR5K_PCICFG_CLKRUNEN 0x00000004 
@@ -70,11 +70,11 @@
 #define VT_WLAN_IN32(a)  (*((volatile unsigned long int *)(dev->mem + (a))))
 #define VT_WLAN_OUT32(v,a) (*((volatile unsigned long int *)(dev->mem + (a))) = (v))
 
-void ath5k_eeprom_lock(struct pcidev *dev) {}
+static bool ath5k_eeprom_lock(struct pcidev *dev) { return true; }
 
-void ath5k_eeprom_unlock(struct pcidev *dev) {}
+static bool ath5k_eeprom_release(struct pcidev *dev) { return true; }
 
-const uint16_t ath5k_eeprom_read16(struct pcidev *dev, unsigned int addr)
+static const uint16_t ath5k_eeprom_read16(struct pcidev *dev, unsigned int addr)
 {
 	int timeout = 10000 ;
  	unsigned long int status ;
@@ -101,18 +101,18 @@ const uint16_t ath5k_eeprom_read16(struct pcidev *dev, unsigned int addr)
  		status = VT_WLAN_IN32(AR5211_EEPROM_STATUS) ;
  		if (status & AR5211_EEPROM_STAT_RDDONE) {
  			if (status & AR5211_EEPROM_STAT_RDERR) {
- 				die( "eeprom read access failed!\n");
+ 				die( "eeprom read access failed at %04x!\n", addr);
  			}
  			status = VT_WLAN_IN32(AR5211_EEPROM_DATA) ;
  			return (status & 0x0000ffff);
  		}
  		timeout-- ;
  	}
- 	die( "eeprom read timeout!\n");
+ 	die( "eeprom read timeout at %04x!\n", addr);
 	return 0;
 }
 
-void ath5k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
+static void ath5k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
 {
  	int timeout = 10000 ;
  	unsigned long int status ;
@@ -124,7 +124,6 @@ void ath5k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
 		buf_write16(addr, value);
 		return;
 	}
-
 
  	/** enable eeprom access */
  	pcicfg = VT_WLAN_IN32( AR5K_PCICFG ) ;
@@ -160,9 +159,9 @@ void ath5k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
  	for ( timeout = 10000 ; timeout > 0 ; --timeout ) {
  		status = VT_WLAN_IN32( AR5211_EEPROM_STATUS );
  		if ( status & 0xC ) {
- 			if ( status & AR5211_EEPROM_STAT_WRERR ) {
+ 			if ( status & AR5211_EEPROM_STAT_WRERR )
  				die("eeprom write access failed!\n");
- 			}
+
  			VT_WLAN_OUT32( 0, AR5211_EEPROM_STATUS );
  			usleep( 10 ) ;
  			break ;
@@ -179,13 +178,18 @@ void ath5k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
 }
 
 struct dev_ops dev_ops_ath5k = {
+	.name			 = "ath5k",
 	.mmap_size        = ATH_MMAP_LENGTH,
-	.eeprom_signature = ATH_EEPROM_SIGNATURE,
+	.eeprom_size      = ATH5K_EEPROM_SIZE,
+	.eeprom_signature = 0,
+	.eeprom_writable  = true,
 
+	.init_device	 = NULL,
 	.eeprom_lock     = &ath5k_eeprom_lock,
-	.eeprom_unlock   = &ath5k_eeprom_unlock,
+	.eeprom_release  = &ath5k_eeprom_release,
 	.eeprom_read16   = &ath5k_eeprom_read16,
 	.eeprom_write16  = &ath5k_eeprom_write16,
-	.eeprom_patch11n = NULL
+	.eeprom_patch11n = NULL,
+	.eeprom_parse    = NULL
 };
 
