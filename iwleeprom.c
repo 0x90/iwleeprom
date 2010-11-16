@@ -483,7 +483,7 @@ void eeprom_patch11n()
 	printf("-> Changing subdev ID\n");
 	value = eeprom_read16(0x14);
 	if ((value & 0x000F) == 0x0006) {
-		eeprom_write16(0x14, (value & 0x000F) | 0x0001);
+		eeprom_write16(0x14, (value & 0xFFF0) | 0x0001);
 	}
 /*
 enabling .11n
