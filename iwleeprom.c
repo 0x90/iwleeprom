@@ -61,6 +61,7 @@ static struct option long_options[] = {
 	{"help",      0, NULL, 'h'},
 	{"list",      0, NULL, 'l'},
 	{"debug",     1, NULL, 'D'},
+	{"init",      0, NULL, 'I'},
 	{"patch11n",  0, NULL, 'p'}
 };
 
@@ -100,6 +101,7 @@ void die(  const char* format, ... );
 char	*ifname = NULL,
 		*ofname = NULL;
 bool patch11n = false,
+	 init_device = false;
 	 nodev = false,
 	 preserve_mac = false,
 	 preserve_calib = false;
@@ -191,6 +193,38 @@ void init_card()
 		perror("mmap failed");
 		exit(1);
 	}
+}
+
+void initpower()
+{
+	unsigned int data;
+	memcpy(&data, mappedAddress + 0x100, 4);
+	data |= 0x20000000;
+	memcpy(mappedAddress + 0x100, &data, 4);
+	usleep(20);
+	memcpy(&data, mappedAddress + 0x100, 4);
+	data |= 0x00800000;
+	memcpy(mappedAddress + 0x100, &data, 4);
+	usleep(20);
+	memcpy(&data, mappedAddress + 0x240, 4);
+	data |= 0xFFFF0000;
+	memcpy(mappedAddress + 0x240, &data, 4);
+	usleep(20);
+	memcpy(&data, mappedAddress + 0x00, 4);
+	data |= 0x00080000;
+	memcpy(mappedAddress + 0x00, &data, 4);
+	usleep(20);
+	memcpy(&data, mappedAddress + 0x20c, 4);
+	data |= 0x00880300;
+	memcpy(mappedAddress + 0x20c, &data, 4);
+	usleep(20);
+	memcpy(&data, mappedAddress + 0x24, 4);
+	data |= 0x00000004;
+	memcpy(mappedAddress + 0x24, &data, 4);
+	usleep(20);
+
+	if (debug)
+		printf("Device has been inited.\n");
 }
 
 void release_card()
@@ -696,7 +730,7 @@ int main(int argc, char** argv)
 	getresuid(&ruid, &euid, &suid);
 
 	while (1) {
-		c = getopt_long(argc, argv, "rwld:mcni:o:bhpD:", long_options, NULL);
+		c = getopt_long(argc, argv, "rwld:mcni:o:bhpID:", long_options, NULL);
 		if (c == -1)
 			break;
 		switch(c) {
@@ -733,6 +767,9 @@ int main(int argc, char** argv)
 			case 'p':
 				patch11n = true;
 				break;
+			case 'I':
+				init_device = true;
+				break;
 			case 'D':
 				debug = atoi(optarg);
 				if (debug)
@@ -760,6 +797,8 @@ int main(int argc, char** argv)
 					"save dump in big-endian byteorder (default: little-endian)\n"
 					"\t-p | --patch11n\t\t\t\t"
 					"patch device eeprom to enable 802.11n\n"
+					"\t-I | --init\t\t\t\t"
+					"init device (useful if driver didn't it)\n"
 					"\t-l | --list\t\t\t\t"
 					"list known cards\n"
 					"\t-D <level> | --debug <level>\t\t"
@@ -798,6 +837,9 @@ int main(int argc, char** argv)
 		printf("No file names given or patch option selected!\nNo EEPROM actions will be performed, just write-enable test\n");
 
 	init_card();
+
+	if(init_device)
+		initpower();
 
 	if (ofname)
 		eeprom_read(ofname);
