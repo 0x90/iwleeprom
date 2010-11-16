@@ -204,7 +204,7 @@ void iwl_eeprom_patch11n(struct pcidev *dev)
 	printf("-> Changing subdev ID\n");
 	value = dev->ops->eeprom_read16(dev, 0x14);
 	if ((value & 0x000F) == 0x0006) {
-		dev->ops->eeprom_write16(dev, 0x14, (value & 0x000F) | 0x0001);
+		dev->ops->eeprom_write16(dev, 0x14, (value & 0xFFF0) | 0x0001);
 	}
 /*
 enabling .11n
