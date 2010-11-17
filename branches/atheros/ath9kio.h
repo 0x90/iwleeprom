@@ -17,12 +17,11 @@
 ****************************************************************************
 */
 
-#ifndef athio_h_included
-#define athio_h_included
+#ifndef ath9kio_h_included
+#define ath9kio_h_included
 #include "iwleeprom.h"
 
 #define ATHEROS_PCI_VID 0x168c
-#define ATH_EEPROM_SIZE  0x800
 
 extern struct dev_ops dev_ops_ath5k;
 extern struct dev_ops dev_ops_ath9k;

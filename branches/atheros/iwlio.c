@@ -30,25 +30,46 @@
 
 #define CSR_WH_IF_CONFIG_REG 0x000
 #define CSR_EEPROM_REG       0x02c
+#define CSR_OTP_GP_REG       0x034
+
+#define CSR_OTP_GP_REG_DEVICE_SELECT 0x00010000
+
+
+#define PARSE_SHOW_CHANNELS
 
 struct iwl_regulatory_item
 {
-	unsigned int addr;
+	unsigned int offs;
 	uint16_t	 data;
 	uint16_t	 chn;
 };
 
+#define CHN_MASK 0x00FF
+#define CHN_HT40 0x0100
+#define CHN_2G   0x0200
 
-#define HT40 0x100
-static struct iwl_regulatory_item iwl_regulatory[] =
+
+
+const struct iwl_regulatory_item iwl_regulatory[] =
 {
 /*
 	BAND 2.4GHz (@15e-179 with regulatory base @156)
 */
-// enabling channels 12-14 (1-11 should be enabled on all cards)
-	{ 0x1E, 0x0f21, 12 },
-	{ 0x20, 0x0f21, 13 },
-	{ 0x22, 0x0f21, 14 },
+	{ 0x08, 0x0f6f,  1 | CHN_2G },
+	{ 0x0A, 0x0f6f,  2 | CHN_2G },
+	{ 0x0C, 0x0f6f,  3 | CHN_2G },
+	{ 0x0E, 0x0f6f,  4 | CHN_2G },
+	{ 0x10, 0x0f6f,  5 | CHN_2G },
+	{ 0x12, 0x0f6f,  6 | CHN_2G },
+	{ 0x14, 0x0f6f,  7 | CHN_2G },
+	{ 0x16, 0x0f6f,  8 | CHN_2G },
+	{ 0x18, 0x0f6f,  9 | CHN_2G },
+	{ 0x1A, 0x0f6f, 10 | CHN_2G },
+	{ 0x1C, 0x0f6f, 11 | CHN_2G },
+
+	{ 0x1E, 0x0f21, 12 | CHN_2G },
+	{ 0x20, 0x0f21, 13 | CHN_2G },
+	{ 0x22, 0x0f21, 14 | CHN_2G },
 
 /*
 	BAND 5GHz
@@ -91,28 +112,28 @@ static struct iwl_regulatory_item iwl_regulatory[] =
 /*
 	BAND 2.4GHz, HT40 channels (@1d8-1e5)
 */
-	{ 0x82, 0x0e6f, HT40 + 1 },
-	{ 0x84, 0x0f6f, HT40 + 2 },
-	{ 0x86, 0x0f6f, HT40 + 3 },
-	{ 0x88, 0x0f6f, HT40 + 4 },
-	{ 0x8a, 0x0f6f, HT40 + 5 },
-	{ 0x8c, 0x0f6f, HT40 + 6 },
-	{ 0x8e, 0x0f6f, HT40 + 7 },
+	{ 0x82, 0x0e6f, 1 | CHN_HT40 | CHN_2G },
+	{ 0x84, 0x0f6f, 2 | CHN_HT40 | CHN_2G },
+	{ 0x86, 0x0f6f, 3 | CHN_HT40 | CHN_2G },
+	{ 0x88, 0x0f6f, 4 | CHN_HT40 | CHN_2G },
+	{ 0x8a, 0x0f6f, 5 | CHN_HT40 | CHN_2G },
+	{ 0x8c, 0x0f6f, 6 | CHN_HT40 | CHN_2G },
+	{ 0x8e, 0x0f6f, 7 | CHN_HT40 | CHN_2G },
 
 /*
 	BAND 5GHz, HT40 channels (@1e8-1fd)
 */
-	{ 0x92, 0x0fe1, HT40 +  36 },
-	{ 0x94, 0x0fe1, HT40 +  44 },
-	{ 0x96, 0x0f31, HT40 +  52 },
-	{ 0x98, 0x0f31, HT40 +  60 },
-	{ 0x9a, 0x0f31, HT40 + 100 },
-	{ 0x9c, 0x0f31, HT40 + 108 },
-	{ 0x9e, 0x0f31, HT40 + 116 },
-	{ 0xa0, 0x0f31, HT40 + 124 },
-	{ 0xa2, 0x0f31, HT40 + 132 },
-	{ 0xa4, 0x0f61, HT40 + 149 },
-	{ 0xa6, 0x0f61, HT40 + 157 },
+	{ 0x92, 0x0fe1,  36 | CHN_HT40 },
+	{ 0x94, 0x0fe1,  44 | CHN_HT40 },
+	{ 0x96, 0x0f31,  52 | CHN_HT40 },
+	{ 0x98, 0x0f31,  60 | CHN_HT40 },
+	{ 0x9a, 0x0f31, 100 | CHN_HT40 },
+	{ 0x9c, 0x0f31, 108 | CHN_HT40 },
+	{ 0x9e, 0x0f31, 116 | CHN_HT40 },
+	{ 0xa0, 0x0f31, 124 | CHN_HT40 },
+	{ 0xa2, 0x0f31, 132 | CHN_HT40 },
+	{ 0xa4, 0x0f61, 149 | CHN_HT40 },
+	{ 0xa6, 0x0f61, 157 | CHN_HT40 },
 
 	{ 0, 0}
 };
@@ -120,45 +141,42 @@ static struct iwl_regulatory_item iwl_regulatory[] =
 
 static void iwl_init_device(struct pcidev *dev)
 {
-	unsigned int data;
-	memcpy(&data, dev->mem + 0x100, 4);
-	data |= 0x20000000;
-	memcpy(dev->mem + 0x100, &data, 4);
+	PCI_OUT32(0x100, PCI_IN32(0x100) | 0x20000000);
 	usleep(20);
-	memcpy(&data, dev->mem + 0x100, 4);
-	data |= 0x00800000;
-	memcpy(dev->mem + 0x100, &data, 4);
+
+	PCI_OUT32(0x100, PCI_IN32(0x100) | 0x00800000);
 	usleep(20);
-	memcpy(&data, dev->mem + 0x240, 4);
-	data |= 0xFFFF0000;
-	memcpy(dev->mem + 0x240, &data, 4);
+
+	PCI_OUT32(0x240, PCI_IN32(0x240) | 0xFFFF0000);
 	usleep(20);
-	memcpy(&data, dev->mem + 0x00, 4);
-	data |= 0x00080000;
-	memcpy(dev->mem + 0x00, &data, 4);
+
+	PCI_OUT32(0, PCI_IN32(0) | 0x00080000);
 	usleep(20);
-	memcpy(&data, dev->mem + 0x20c, 4);
-	data |= 0x00880300;
-	memcpy(dev->mem + 0x20c, &data, 4);
+	
+	PCI_OUT32(0x20c, PCI_IN32(0x20c) | 0x00880300);
 	usleep(20);
-	memcpy(&data, dev->mem + 0x24, 4);
-	data |= 0x00000004;
-	memcpy(dev->mem + 0x24, &data, 4);
+
+	PCI_OUT32(0x24, PCI_IN32(0x24) | 0x00000004);
 	usleep(20);
 
 	if (debug)
 		printf("Device has been inited.\n");
 }
 
+static void iwl_6k_eeprom_check(struct pcidev *dev)
+{
+	if ( PCI_IN32(CSR_OTP_GP_REG) & CSR_OTP_GP_REG_DEVICE_SELECT)
+		dev->ops->eeprom_writable = 1;
+	printf("IWL 6k device NVM type: %s\n", dev->ops->eeprom_writable ? "EEPROM" : "OTP");
+}
+
 static bool iwl_eeprom_lock(struct pcidev *dev)
 {
 	unsigned long data;
 	if (!dev->mem) return false;
-	memcpy(&data, dev->mem, 4);
-	data |= 0x00200000;
-	memcpy(dev->mem, &data, 4);
+	PCI_OUT32(0, PCI_IN32(0) | 0x00200000);
 	usleep(5);
-	memcpy(&data, dev->mem, 4);
+	data = PCI_IN32(0);
 
 	dev->eeprom_locked = ( 0x00200000 == (data & 0x00200000));
 	if (!dev->eeprom_locked)
@@ -170,11 +188,10 @@ static bool iwl_eeprom_release(struct pcidev *dev)
 {
 	unsigned long data;
 	if (!dev->mem) return false;
-	memcpy(&data, dev->mem, 4);
-	data &= ~0x00200000;
-	memcpy(dev->mem, &data, 4);
+	PCI_OUT32(0, PCI_IN32(0) & ~0x00200000);
 	usleep(5);
-	memcpy(&data, dev->mem, 4);
+	data = PCI_IN32(0);
+
 	dev->eeprom_locked = ( 0x00200000 == (data & 0x00200000));
 	if (dev->eeprom_locked)
 		printf("err! software is still using eeprom!\n");
@@ -182,70 +199,85 @@ static bool iwl_eeprom_release(struct pcidev *dev)
 	return (!dev->eeprom_locked);
 }
 
-static const uint16_t iwl_eeprom_read16(struct pcidev *dev, unsigned int addr)
+static uint16_t iwl_eeprom_read16(struct pcidev *dev, unsigned int addr)
 {
-	uint16_t value;
 	unsigned int data = 0x0000FFFC & (addr << 1);
 	if (!dev->mem)
 		return buf_read16(addr);
 
-	memcpy(dev->mem + CSR_EEPROM_REG, &data, 4);
+	PCI_OUT32(CSR_EEPROM_REG, data);
 	usleep(50);
-	memcpy(&data, dev->mem + CSR_EEPROM_REG, 4);
-	if ((data & 1) != 1)
-		die("Read not complete! Timeout at %04x\n", addr);
-
-	value = (data & 0xFFFF0000) >> 16;
-	return value;
-}
-
-static void iwl_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
-{
-	if (!dev->mem) {
-		buf_write16(addr, value);
-		return;
+	data = PCI_IN32(CSR_EEPROM_REG);
+	if ((data & 1) != 1) {
+		printf("Read not complete! Timeout at %04x\n", addr);
+		return 0;
 	}
 
-	unsigned int data = value;
+	return ((data & 0xFFFF0000) >> 16);
+}
+
+static bool iwl_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
+{
+	if (!dev->mem)
+		return buf_write16(addr, value);
+
+	uint32_t data = value;
 
 	if (preserve_mac && ((addr>=0x2A && addr<0x30) || (addr>=0x92 && addr<0x97)))
-		return;
+		return true;
 	if (preserve_calib && (addr >= 0x200))
-		return;
+		return true;
 
 	data <<= 16;
 	data |= 0x0000FFFC & (addr << 1);
 	data |= 0x2;
 
-	memcpy(dev->mem + CSR_EEPROM_REG, &data, 4);
+	PCI_OUT32(CSR_EEPROM_REG, data);
 	usleep(5000);
 
-	data = 0x0000FFC & (addr << 1);
-	memcpy(dev->mem + CSR_EEPROM_REG, &data, 4);
+	PCI_OUT32(CSR_EEPROM_REG, 0x0000FFC & (addr << 1));
 	usleep(50);
-	memcpy(&data, dev->mem + CSR_EEPROM_REG, 4);
-	if ((data & 1) != 1)
-		die("Read not complete! Timeout at %04x\n", addr);
+	data = PCI_IN32(CSR_EEPROM_REG);
+	if ((data & 1) != 1) {
+		printf("Read not complete! Timeout at %04x\n", addr);
+		return false;
+	}
 
-	if (value != (data >> 16))
-		die("Verification error at %04x\n", addr);
-	return;
+	if (value != (data >> 16)) {
+		printf("Verification error at %04x\n", addr);
+		return false;
+	}
+	return true;
 }
 
-static void iwl_eeprom_patch11n_5k(struct pcidev *dev)
+static void iwl_eeprom_patch11n(struct pcidev *dev)
 {
-	uint16_t value;
-	unsigned int reg_offs;
 	int idx;
+	bool     is4965 = false;
+
+	uint16_t value;
+	uint16_t sig_offs = 0x158,
+			 sig[2],
+			 reg_offs,
+			 chn_offs,
+			 chn_data,
+			 new_data;
+
+	if (dev->ops->eeprom_size == IWL_EEPROM_SIZE_4965) {
+		is4965 = true;
+		sig_offs = 0xC0;
+	}
+
 
 	printf("Patching card EEPROM...\n");
 
-	if (!dev->ops->eeprom_lock(dev))
+	if (dev->mem && !dev->ops->eeprom_lock(dev))
 		return;
 
 	printf("-> Changing subdev ID\n");
+
 	value = dev->ops->eeprom_read16(dev, 0x14);
-	if ((value & 0x000F) == 0x0006) {
+	if (0x0006 == (value & 0x000F)) {
 		dev->ops->eeprom_write16(dev, 0x14, (value & 0xFFF0) | 0x0001);
 	}
 /*
@@ -258,14 +290,14 @@ W @8C << 103E (603F) <- x001 xxxx xxxx xxx0
 	printf("-> Enabling 11n mode\n");
 // SKU_CAP
 	value = dev->ops->eeprom_read16(dev, 0x8A);
-	if ((value & 0x0040) != 0x0040) {
+	if (0x0040 != (value & 0x0040)) {
 		printf("  SKU CAP\n");
 		dev->ops->eeprom_write16(dev, 0x8A, value | 0x0040);
 	}
 
 // OEM_MODE
 	value = dev->ops->eeprom_read16(dev, 0x8C);
-	if ((value & 0x7001) != 0x1000) {
+	if (0x1000 != (value & 0x7001)) {
 		printf("  OEM MODE\n");
 		dev->ops->eeprom_write16(dev, 0x8C, (value & 0x9FFE) | 0x1000);
 	}
@@ -273,40 +305,136 @@ W @8C << 103E (603F) <- x001 xxxx xxxx xxx0
 /*
 writing SKU ID - 'MoW' signature
 */
-	if (dev->ops->eeprom_read16(dev, 0x158) != 0x6f4d)
-		dev->ops->eeprom_write16(dev, 0x158, 0x6f4d);
-	if (dev->ops->eeprom_read16(dev, 0x15A) != 0x0057)
-		dev->ops->eeprom_write16(dev, 0x15A, 0x0057);
+	sig[0] = dev->ops->eeprom_read16(dev, sig_offs);
+	sig[1] = dev->ops->eeprom_read16(dev, sig_offs+2);
+
+	if (0x6f4d != sig[0])
+		dev->ops->eeprom_write16(dev, sig_offs, 0x6f4d);
+	if (0x0057 != (sig[1] & 0x00FF))
+		dev->ops->eeprom_write16(dev, sig_offs+2, (sig[1] & 0xFF00) | 0x0057);
 
 	printf("-> Checking and adding channels...\n");
 // reading regulatory offset
-	reg_offs = 2 * dev->ops->eeprom_read16(dev, 0xCC);
+	if (is4965)
+		reg_offs = 0x00be;
+	else
+		reg_offs = 2 * dev->ops->eeprom_read16(dev, 0xCC);
 	printf("Regulatory base: %04x\n", reg_offs);
 /*
 writing channels regulatory...
 */
-	for (idx=0; iwl_regulatory[idx].addr; idx++) {
-		if (dev->ops->eeprom_read16(dev, reg_offs + iwl_regulatory[idx].addr) != iwl_regulatory[idx].data) {
-			printf("  %d%s\n", iwl_regulatory[idx].chn & ~HT40, (iwl_regulatory[idx].chn & HT40) ? " (HT40)" : "");
-			dev->ops->eeprom_write16(dev, reg_offs + iwl_regulatory[idx].addr, iwl_regulatory[idx].data);
+	for (idx=0; iwl_regulatory[idx].offs; idx++) {
+		chn_offs = reg_offs + iwl_regulatory[idx].offs;
+		chn_data = dev->ops->eeprom_read16(dev, chn_offs);
+		new_data = iwl_regulatory[idx].data;
+
+		if (new_data != chn_data) {
+			printf("  %3d (%s%s)   %2d->%2d mW, flags %02x->%02x\n",
+					 iwl_regulatory[idx].chn & CHN_MASK,
+					(iwl_regulatory[idx].chn & CHN_2G) ? "2.4G" : "5G",
+					(iwl_regulatory[idx].chn & CHN_HT40) ? ", HT40" : "",
+					chn_data >> 8, new_data >> 8,
+					chn_data & 0xFF, new_data & 0xFF
+			);
+			dev->ops->eeprom_write16(dev, chn_offs, iwl_regulatory[idx].data);
 		}
 	}
 
-	dev->ops->eeprom_release(dev);
+	if (dev->mem)
+		dev->ops->eeprom_release(dev);
 	printf("\nCard EEPROM patched successfully\n");
 }
 
-static void iwl_eeprom_parse_5k(struct pcidev *dev)
+static void iwl_eeprom_parse(struct pcidev *dev)
 {
+	uint16_t vid,did,svid,sdid,ver;
+
 	bool mode11n;
+	uint16_t sku_cap,
+			 oem_mode,
+			 sig[2],
+			 mac[3],
+			 radio;
 
-	mode11n = (0x0040 == (dev->ops->eeprom_read16(dev, 0x8A) & 0x0040)) &&
-	 		  (0x1000 == (dev->ops->eeprom_read16(dev, 0x8C) & 0x7001)) &&
-			  (0x6f4d == dev->ops->eeprom_read16(dev, 0x158)) &&
-			  (0x0057 == (dev->ops->eeprom_read16(dev, 0x15A) & 0x00FF));
+	bool     is4965 = false;
+	uint16_t sig_offs = 0x158;
+#ifdef PARSE_SHOW_CHANNELS
+	uint16_t reg_offs, chn_data;
+	int idx;
+#endif
 
+	if (dev->ops->eeprom_size == IWL_EEPROM_SIZE_4965) {
+		is4965 = true;
+		sig_offs = 0xC0;
+	}
+	
+	vid = dev->ops->eeprom_read16(dev, 0x0e);
+	did = dev->ops->eeprom_read16(dev, 0x10);
+	svid = dev->ops->eeprom_read16(dev, 0x12);
+	sdid = dev->ops->eeprom_read16(dev, 0x14);
+
+	ver = dev->ops->eeprom_read16(dev, 0x88);
+
+	printf("\nDevice ID   : %04x:%04x, %04x:%04x\n",	vid, did, svid, sdid);
+	printf("EEPROM ver  : %04x\n", ver);
+
+	sku_cap  = dev->ops->eeprom_read16(dev, 0x8A);
+	oem_mode = dev->ops->eeprom_read16(dev, 0x8C);
+	sig[0] = dev->ops->eeprom_read16(dev, sig_offs);
+	sig[1] = dev->ops->eeprom_read16(dev, sig_offs+2);
+
+
+	mode11n = (0x0040 == ( sku_cap & 0x0040)) &&
+	 		  (0x1000 == ( oem_mode & 0x7001)) &&
+			  (0x6f4d == sig[0]) &&
+			  (0x0057 == (sig[1] & 0x00FF));
+/*
+	printf("\nSKU CAP : %04x\n", sku_cap);
+	printf("OEM MODE: %04x\n", oem_mode);
+	printf("SIG [0] : %04x\n", sig[0]);
+	printf("SIG [1] : %04x\n", sig[1]);
+*/	
+	mac[0] = dev->ops->eeprom_read16(dev, 0x2a);
+	mac[1] = dev->ops->eeprom_read16(dev, 0x2c);
+	mac[2] = dev->ops->eeprom_read16(dev, 0x2e);
+	radio = dev->ops->eeprom_read16(dev, 0x90);
+
+
+	printf("MAC address : %02x:%02x:%02x:%02x:%02x:%02x\n",
+			mac[0] & 0xFF,  mac[0] >> 8, 
+			mac[1] & 0xFF,  mac[1] >> 8, 
+			mac[2] & 0xFF,  mac[2] >> 8);
+	printf("RF config:\n  Tx antenna: %s%s%s\n  Rx antenna: %s%s%s\n",
+		((radio >> 8) & 1) ? "A" : "",
+		((radio >> 8) & 2) ? "B" : "",
+		((radio >> 8) & 4) ? "C" : "",
+		((radio >>12) & 1) ? "A" : "",
+		((radio >>12) & 2) ? "B" : "",
+		((radio >>12) & 4) ? "C" : ""
+	);
 	printf("Mode 802.11n: %sabled\n", mode11n ? "en" : "dis");
-//	printf("Enabled channels:\n");
+
+#ifdef PARSE_SHOW_CHANNELS
+	if (is4965)
+		reg_offs = 0x00be;
+	else
+		reg_offs = 2 * dev->ops->eeprom_read16(dev, 0xCC);
+	printf("Regulatory base: %04x\n", reg_offs);
+	printf("Enabled channels:\n");
+
+	for (idx=0; iwl_regulatory[idx].offs; idx++) {
+		chn_data = dev->ops->eeprom_read16(dev, reg_offs + iwl_regulatory[idx].offs);
+		if (chn_data) {
+			printf("  %3d (%s%s) %d mW, flags %02x\n",
+					iwl_regulatory[idx].chn & CHN_MASK,
+					(iwl_regulatory[idx].chn & CHN_2G) ? "2.4G" : "5G",
+					(iwl_regulatory[idx].chn & CHN_HT40) ? ", HT40" : "",
+					chn_data >> 8,
+					chn_data & 0xFF
+			);
+		}
+	}
+#endif
 }
 
 struct dev_ops dev_ops_iwl4965 = {
@@ -317,12 +445,13 @@ struct dev_ops dev_ops_iwl4965 = {
 	.eeprom_writable  = true,
 
 	.init_device     = &iwl_init_device,
+	.eeprom_check    = NULL,
 	.eeprom_lock     = &iwl_eeprom_lock,
 	.eeprom_release  = &iwl_eeprom_release,
 	.eeprom_read16   = &iwl_eeprom_read16,
 	.eeprom_write16  = &iwl_eeprom_write16,
-	.eeprom_patch11n = NULL,
-	.eeprom_parse    = NULL
+	.eeprom_patch11n = &iwl_eeprom_patch11n,
+	.eeprom_parse    = &iwl_eeprom_parse
 };
 
 struct dev_ops dev_ops_iwl5k = {
@@ -333,12 +462,13 @@ struct dev_ops dev_ops_iwl5k = {
 	.eeprom_writable  = true,
 
 	.init_device     = &iwl_init_device,
+	.eeprom_check    = NULL,
 	.eeprom_lock     = &iwl_eeprom_lock,
 	.eeprom_release  = &iwl_eeprom_release,
 	.eeprom_read16   = &iwl_eeprom_read16,
 	.eeprom_write16  = &iwl_eeprom_write16,
-	.eeprom_patch11n = &iwl_eeprom_patch11n_5k,
-	.eeprom_parse    = &iwl_eeprom_parse_5k
+	.eeprom_patch11n = &iwl_eeprom_patch11n,
+	.eeprom_parse    = &iwl_eeprom_parse
 };
 
 struct dev_ops dev_ops_iwl6k = {
@@ -349,11 +479,12 @@ struct dev_ops dev_ops_iwl6k = {
 	.eeprom_writable  = false,
 
 	.init_device     = &iwl_init_device,
+	.eeprom_check    = &iwl_6k_eeprom_check,
 	.eeprom_lock     = &iwl_eeprom_lock,
 	.eeprom_release  = &iwl_eeprom_release,
 	.eeprom_read16   = &iwl_eeprom_read16,
 	.eeprom_write16  = &iwl_eeprom_write16,
-	.eeprom_patch11n = &iwl_eeprom_patch11n_5k,
-	.eeprom_parse    = &iwl_eeprom_parse_5k
+	.eeprom_patch11n = &iwl_eeprom_patch11n,
+	.eeprom_parse    = &iwl_eeprom_parse
 };
 

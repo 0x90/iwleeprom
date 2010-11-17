@@ -26,8 +26,9 @@
 
 #include "ath9kio.h"
 
+#define ATH9K_EEPROM_SIZE           0x1000
 #define ATH_EEPROM_SIGNATURE        0x7801
-#define ATH_MMAP_LENGTH 0x10000
+#define ATH_MMAP_LENGTH            0x10000
 
 
 #define AR5416_EEPROM_S             2
@@ -119,20 +120,18 @@ uint32_t eeprom_base,
 		 macRev;
 bool	 isPCIE;
 
-static const uint16_t ath9k_eeprom_read16_raw(struct pcidev *dev, unsigned int addr);
-static const uint16_t ath9k_eeprom_read16(struct pcidev *dev, unsigned int addr);
-static void ath9k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value);
-
+static uint16_t ath9k_eeprom_read16(struct pcidev *dev, unsigned int addr);
+static uint16_t ath9k_eeprom_read16_short(struct pcidev *dev, unsigned int addr);
+static bool ath9k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value);
+static bool ath9k_eeprom_write16_short(struct pcidev *dev, unsigned int addr, uint16_t value);
 
 static void ath9k_read_hw_version(struct pcidev *dev)
 {
 	uint32_t val;
 
-	memcpy(&val, dev->mem + AR_SREV, 4);
-	val &= AR_SREV_ID;
-
+	val = PCI_IN32(AR_SREV) & AR_SREV_ID;
 	if (val == 0xFF) {
-		memcpy(&val, dev->mem + AR_SREV, 4);
+		val = PCI_IN32(AR_SREV);
 		macVer = (val & AR_SREV_VERSION2) >> AR_SREV_TYPE2_S;
 		macRev = (val & AR_SREV_REVISION2) >> AR_SREV_REVISION2_S;
 		isPCIE = (val & AR_SREV_TYPE2_HOST_MODE) ? 0 : 1;
@@ -153,9 +152,9 @@ static bool ath9k_eeprom_lock(struct pcidev *dev) {
 // reading EEPROM size and setting it's base address
 // thanks to Inv from forum.ixbt.com
 	dev->ops->eeprom_size = 0;
-	if (376  == ath9k_eeprom_read16_raw(dev,  64))      { dev->ops->eeprom_size =  376; eeprom_base =  64; dev->ops->eeprom_signature = 0x0178; }
-	else if (3256 == ath9k_eeprom_read16_raw(dev, 256)) { dev->ops->eeprom_size = 3256; eeprom_base = 256; dev->ops->eeprom_signature = 0x0cb8; }
-	else if (727  == ath9k_eeprom_read16_raw(dev, 128)) { dev->ops->eeprom_size =  727; eeprom_base = 128; dev->ops->eeprom_signature = 0x02d7; }
+	if (376  == ath9k_eeprom_read16(dev,  64))      { dev->ops->eeprom_size =  376; eeprom_base =  64; dev->ops->eeprom_signature = 0x0178; }
+	else if (3256 == ath9k_eeprom_read16(dev, 256)) { dev->ops->eeprom_size = 3256; eeprom_base = 256; dev->ops->eeprom_signature = 0x0cb8; }
+	else if (727  == ath9k_eeprom_read16(dev, 128)) { dev->ops->eeprom_size =  727; eeprom_base = 128; dev->ops->eeprom_signature = 0x02d7; }
 	if (!dev->ops->eeprom_size) {
 		printf("Can't get ath9k eeprom size!\n");
 		return false;
@@ -165,19 +164,23 @@ static bool ath9k_eeprom_lock(struct pcidev *dev) {
 	}
 }
 
-static bool ath9k_eeprom_release(struct pcidev *dev) { return true; }
+static bool ath9k_eeprom_release(struct pcidev *dev) {
+// CRC calc should be here
+	return true;
+}
 
-static const uint16_t ath9k_eeprom_read16_raw(struct pcidev *dev, unsigned int addr)
+static uint16_t ath9k_eeprom_read16(struct pcidev *dev, unsigned int addr)
 {
 	int32_t data;
 	int i;
+
 // requesting data
-	memcpy(&data, dev->mem + AR5416_EEPROM_OFFSET + (addr << AR5416_EEPROM_S), 4);
+	data = PCI_IN32(AR5416_EEPROM_OFFSET + (addr << AR5416_EEPROM_S));
 
 // waiting...
 	for(i = WAIT_TIMEOUT; i; i--) {
 		usleep(10);
-		memcpy(&data, dev->mem + AR_EEPROM_STATUS_DATA, 4);
+		data = PCI_IN32(AR_EEPROM_STATUS_DATA);
 		if ( 0 == (data & (AR_EEPROM_STATUS_DATA_BUSY | AR_EEPROM_STATUS_DATA_PROT_ACCESS))) {
 			data &= AR_EEPROM_STATUS_DATA_VAL;
 			return data;
@@ -187,12 +190,15 @@ static const uint16_t ath9k_eeprom_read16_raw(struct pcidev *dev, unsigned int a
 	return 0;
 }
 
-static const uint16_t ath9k_eeprom_read16(struct pcidev *dev, unsigned int addr)
+static uint16_t ath9k_eeprom_read16_short(struct pcidev *dev, unsigned int addr)
 {
-	return ath9k_eeprom_read16_raw(dev, addr + eeprom_base);
+	if (!dev->mem)
+		return buf_read16(addr);
+
+	return ath9k_eeprom_read16(dev, addr + eeprom_base);
 }
 
-static void ath9k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
+static bool ath9k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
 {
 	int i;
 	uint32_t data;
@@ -202,25 +208,22 @@ static void ath9k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t
 			gpio_in_out;
 
 // selecting GPIO
-	memcpy(&gpio_out_mux1, dev->mem + AR_GPIO_OUTPUT_MUX1, 4);
-	data = (gpio_out_mux1 & 0xFFF07FFF);
-	memcpy(dev->mem + AR_GPIO_OUTPUT_MUX1, &data, 4);
+	gpio_out_mux1 = PCI_IN32(AR_GPIO_OUTPUT_MUX1);
+	PCI_OUT32(AR_GPIO_OUTPUT_MUX1, gpio_out_mux1 & 0xFFF07FFF);
 	usleep(10);
 
 // setting GPIO pin direction
-	memcpy(&gpio_oe_out, dev->mem + AR_GPIO_OE_OUT, 4);
-	data = (gpio_oe_out & 0xFFFFFF3F) | 0x000000C0;
-	memcpy(dev->mem + AR_GPIO_OE_OUT, &data, 4);
+	gpio_oe_out = PCI_IN32(AR_GPIO_OE_OUT);
+	PCI_OUT32(AR_GPIO_OE_OUT, (gpio_oe_out & 0xFFFFFF3F) | 0x000000C0);
 	usleep(10);
 
 // setting GPIO pin level
-	memcpy(&gpio_in_out, dev->mem + AR_GPIO_IN_OUT, 4);
-	data = (gpio_in_out & 0xFFFFFFF7);
-	memcpy(dev->mem + AR_GPIO_IN_OUT, &data, 4);
+	gpio_in_out = PCI_IN32(AR_GPIO_IN_OUT);
+	PCI_OUT32(AR_GPIO_IN_OUT, gpio_in_out & 0xFFFFFFF7);
 	usleep(10);
 
 // sending data
-	memcpy(dev->mem + AR5416_EEPROM_OFFSET + (addr << AR5416_EEPROM_S), &data, 4);
+	PCI_OUT16(AR5416_EEPROM_OFFSET + (addr << AR5416_EEPROM_S), value);
 
 // waiting...
 	for(i = WAIT_TIMEOUT; i; i--) {
@@ -234,12 +237,21 @@ static void ath9k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t
 	}
 
 // restoring GPIO state...
-	memcpy(dev->mem + AR_GPIO_IN_OUT, &gpio_in_out, 4);
-	memcpy(dev->mem + AR_GPIO_OE_OUT, &gpio_oe_out, 4);
-	memcpy(dev->mem + AR_GPIO_OUTPUT_MUX1, &gpio_out_mux1, 4);
+	PCI_OUT32(AR_GPIO_IN_OUT, gpio_in_out);
+	PCI_OUT32(AR_GPIO_OE_OUT, gpio_oe_out);
+	PCI_OUT32(AR_GPIO_OUTPUT_MUX1, gpio_out_mux1);
 
 	if (!i)
 		printf("timeout writing ath9k eeprom at %04x!\n", addr);
+	return !!i;
+}
+
+static bool ath9k_eeprom_write16_short(struct pcidev *dev, unsigned int addr, uint16_t value)
+{
+	if (!dev->mem)
+		return buf_write16(addr, value);
+
+	return ath9k_eeprom_write16(dev, addr + eeprom_base, value);
 }
 
 static void ath9k_eeprom_patch11n(struct pcidev *dev)
@@ -250,15 +262,18 @@ static void ath9k_eeprom_patch11n(struct pcidev *dev)
 struct dev_ops dev_ops_ath9k = {
 	.name			 = "ath9k",
 	.mmap_size        = ATH_MMAP_LENGTH,
+	//.eeprom_size	  = ATH9K_EEPROM_SIZE
 	.eeprom_size	  = 0,
 	.eeprom_signature = 0,
 	.eeprom_writable  = true,
 
 	.init_device	 = NULL,
+	.eeprom_check    = NULL,
 	.eeprom_lock     = &ath9k_eeprom_lock,
 	.eeprom_release  = &ath9k_eeprom_release,
-	.eeprom_read16   = &ath9k_eeprom_read16,
-	.eeprom_write16  = &ath9k_eeprom_write16,
+	.eeprom_read16   = &ath9k_eeprom_read16_short,
+	.eeprom_write16  = &ath9k_eeprom_write16_short,
 	.eeprom_patch11n = &ath9k_eeprom_patch11n,
 	.eeprom_parse    = NULL
 };
+
