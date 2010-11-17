@@ -62,6 +62,8 @@ bool eeprom_locked;
 enum byte_order dump_order;
 uid_t ruid,euid,suid;
 
+void die(  const char* format, ... ); 
+
 char	*ifname = NULL,
 		*ofname = NULL;
 bool patch11n = false,
@@ -198,7 +200,6 @@ void fixate_dump(struct pcidev *dev, char *filename)
 	seteuid(suid);
 }
 
-
 const uint16_t buf_read16(unsigned int addr)
 {
 	if (addr >= EEPROM_SIZE_MAX) return 0;
@@ -208,13 +209,14 @@ const uint16_t buf_read16(unsigned int addr)
 		return (be2cpu16(buf[addr/2]));
 }
 
-void buf_write16(unsigned int addr, uint16_t value)
+bool buf_write16(unsigned int addr, uint16_t value)
 {
-	if (addr >= EEPROM_SIZE_MAX) return;
+	if (addr >= EEPROM_SIZE_MAX) return false;
 	if (dump_order == order_le)
 		buf[addr/2] = cpu2le16(value);
 	else
 		buf[addr/2] = cpu2be16(value);
+	return true;
 }
 
 void eeprom_read(char *filename)
@@ -582,6 +584,8 @@ int main(int argc, char** argv)
 
 	if (debug)
 		printf("address: %08x\n", offset);
+	if (dev.ops->eeprom_check)
+		dev.ops->eeprom_check(&dev);
 
 	if(!ifname && !ofname && !patch11n && !parse)
 		printf("No file names given nor actions selected!\nNo EEPROM actions will be performed, just write-enable test\n");

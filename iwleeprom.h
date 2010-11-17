@@ -46,8 +46,10 @@
 #endif
 
 /* PCI R/W macros */
-#define PCI_IN32(_dev,a)    (*((volatile unsigned long int *)(_dev->mem + (a))))
-#define PCI_OUT32(_dev,v,a) (*((volatile unsigned long int *)(_dev->mem + (a))) = (v))
+#define PCI_IN32(a)    (*((volatile uint32_t *)(dev->mem + (a))))
+#define PCI_IN16(a)    (*((volatile uint16_t *)(dev->mem + (a))))
+#define PCI_OUT32(a,v) (*((volatile uint32_t *)(dev->mem + (a))) = (v))
+#define PCI_OUT16(a,v) (*((volatile uint16_t *)(dev->mem + (a))) = (v))
 
 struct pcidev
 {
@@ -77,27 +79,13 @@ enum byte_order
 };
 
 extern unsigned int  debug;
-#define EEPROM_SIZE_MAX  0x800
+#define EEPROM_SIZE_MAX  0x1000
 
-extern uint16_t buf[EEPROM_SIZE_MAX/2];
-extern enum byte_order dump_order;
 extern bool preserve_mac;
 extern bool preserve_calib;
 
-void die(  const char* format, ... ); 
-
-
 extern const uint16_t buf_read16(unsigned int addr);
-extern void buf_write16(unsigned int addr, uint16_t value);
-
-typedef bool (*init_device_t)(struct pcidev *dev);
-typedef bool (*eeprom_lock_t)(struct pcidev *dev);
-typedef bool (*eeprom_release_t)(struct pcidev *dev);
-typedef const uint16_t (*eeprom_read16_t)(struct pcidev *dev, unsigned int addr);
-typedef void (*eeprom_write16_t)(struct pcidev *dev, unsigned int addr, uint16_t value);
-
-typedef void (*eeprom_patch11n_t)(struct pcidev *dev);
-typedef void (*eeprom_parse_t)(struct pcidev *dev);
+extern bool buf_write16(unsigned int addr, uint16_t value);
 
 struct dev_ops {
 	const char*		  name;
@@ -107,10 +95,11 @@ struct dev_ops {
 	bool			  eeprom_writable;
 
 	void (*init_device)(struct pcidev *dev);
+	void (*eeprom_check)(struct pcidev *dev);
 	bool (*eeprom_lock)(struct pcidev *dev);
 	bool (*eeprom_release)(struct pcidev *dev);
-	const uint16_t (*eeprom_read16)(struct pcidev *dev, unsigned int addr);
-	void (*eeprom_write16)(struct pcidev *dev, unsigned int addr, uint16_t value);
+	uint16_t (*eeprom_read16)(struct pcidev *dev, unsigned int addr);
+	bool (*eeprom_write16)(struct pcidev *dev, unsigned int addr, uint16_t value);
 
 	void (*eeprom_patch11n)(struct pcidev *dev);
 	void (*eeprom_parse)(struct pcidev *dev);
