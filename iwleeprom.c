@@ -200,16 +200,17 @@ void fixate_dump(struct pcidev *dev, char *filename)
 	seteuid(suid);
 }
 
-const uint16_t buf_read16(unsigned int addr)
+bool buf_read16(uint32_t addr, uint16_t *value)
 {
 	if (addr >= EEPROM_SIZE_MAX) return 0;
 	if (dump_order == order_le)
-		return (le2cpu16(buf[addr/2]));
+		*value = le2cpu16(buf[addr/2]);
 	else
-		return (be2cpu16(buf[addr/2]));
+		*value = be2cpu16(buf[addr/2]);
+	return true;
 }
 
-bool buf_write16(unsigned int addr, uint16_t value)
+bool buf_write16(uint32_t addr, uint16_t value)
 {
 	if (addr >= EEPROM_SIZE_MAX) return false;
 	if (dump_order == order_le)
@@ -221,20 +222,20 @@ bool buf_write16(unsigned int addr, uint16_t value)
 
 void eeprom_read(char *filename)
 {
-	unsigned int addr = 0;
+	uint32_t addr = 0;
+	uint16_t data;
 	FILE *fd;
 	
-	if (!dev.ops->eeprom_lock(&dev))
-		die("eeprom_lock() failed!\n");
-
 	printf("Saving dump with byte order: %s ENDIAN\n", (dump_order == order_le) ? "LITTLE":"BIG");
 
 	for (addr = 0; addr < dev.ops->eeprom_size; addr += 2)
 	{
+		if (!dev.ops->eeprom_read16(&dev, addr, &data)) return;
+
 		if (dump_order == order_le)
-			buf[addr/2] = cpu2le16( dev.ops->eeprom_read16(&dev, addr) );
+			buf[addr/2] = cpu2le16( data );
 		else
-			buf[addr/2] = cpu2be16( dev.ops->eeprom_read16(&dev, addr) );
+			buf[addr/2] = cpu2be16( data );
 		if (0 ==(addr & 0x7F)) printf("%04x [", addr);
 		printf("x");
 		if (0x7E ==(addr & 0x7F)) printf("]\n");
@@ -248,8 +249,6 @@ void eeprom_read(char *filename)
 	fclose(fd);
 	seteuid(suid);
 
-	dev.ops->eeprom_release(&dev);
-
 	printf("\nEEPROM has been dumped to '%s'\n", filename);
 }
 
@@ -258,6 +257,7 @@ void eeprom_write(char *filename)
 	unsigned int addr = 0;
 	enum byte_order order = order_unknown;
 	uint16_t value;
+	uint16_t evalue;
 	size_t   size;
 	FILE *fd;
 
@@ -267,9 +267,6 @@ void eeprom_write(char *filename)
 	size = 2 * fread(buf, 2, dev.ops->eeprom_size/2, fd);
 	fclose(fd);
 	seteuid(suid);
-
-	if (!dev.ops->eeprom_lock(&dev))
-		die("eeprom_lock() failed!\n");
 
 	printf("Writing data to EEPROM...\n  '.' = match, 'x' = write\n");
 	for(addr=0; addr<size;addr+=2)
@@ -288,9 +285,10 @@ void eeprom_write(char *filename)
 			value = be2cpu16( buf[addr/2] );
 		else
 			value = le2cpu16( buf[addr/2] );
+		if (!dev.ops->eeprom_read16(&dev, addr, &evalue)) return;
 
 		if (0 ==(addr & 0x7F)) printf("%04x [", addr);
-		if (dev.ops->eeprom_read16(&dev, addr) != value) {
+		if (evalue != value) {
 			dev.ops->eeprom_write16(&dev, addr, value);
 			printf("x");
 		} else {
@@ -299,8 +297,6 @@ void eeprom_write(char *filename)
 		if (0x7E ==(addr & 0x7F)) printf("]\n");
 		fflush(stdout);
 	}
-
-	dev.ops->eeprom_release(&dev);
 
 	printf("\nEEPROM has been written from '%s'\n", filename);
 }
@@ -548,7 +544,7 @@ int main(int argc, char** argv)
 					"\t-I | --init\t\t\t\t"
 					"init device (useful if driver didn't it)\n"
 					"\t-P | --parse\t\t\t\t"
-					"parse eeprom (show available modes/channels)"
+					"parse eeprom (show available modes/channels)\n"
 					"\t-l | --list\t\t\t\t"
 					"list known cards\n"
 					"\t-D <level> | --debug <level>\t\t"
@@ -592,8 +588,11 @@ int main(int argc, char** argv)
 
 	init_card();
 
-	if (init_device && dev.ops->init_device)
-		dev.ops->init_device(&dev);
+	if (init_device && dev.ops->init_device && !dev.ops->init_device(&dev))
+		die("Device init failed!\n");
+
+	if (dev.ops->eeprom_lock && !dev.ops->eeprom_lock(&dev))
+		die("Failed to lock eeprom!\n");
 
 	if (ofname)
 		eeprom_read(ofname);
@@ -611,6 +610,9 @@ int main(int argc, char** argv)
 		printf("\n\ndevice capabilities after eeprom writing:\n");
 		dev.ops->eeprom_parse(&dev);
 	}
+
+	if (dev.ops->eeprom_release && !dev.ops->eeprom_release(&dev))
+		die("Failed to unlock eeprom!\n");
 
 	release_card();
 	return 0;

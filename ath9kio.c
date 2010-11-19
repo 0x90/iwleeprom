@@ -26,9 +26,9 @@
 
 #include "ath9kio.h"
 
-#define ATH9K_EEPROM_SIZE           0x1000
-#define ATH_EEPROM_SIGNATURE        0x7801
-#define ATH_MMAP_LENGTH            0x10000
+#define ATH9K_EEPROM_SIZE           0x0800
+#define ATH9K_EEPROM_SIGNATURE      0xA55A
+#define ATH9K_MMAP_LENGTH          0x10000
 
 
 #define AR5416_EEPROM_S             2
@@ -46,8 +46,20 @@
 #define AR_SREV_VERSION_9300        0x1c0
 #define AR_SREV_REVISION_9300_20    2 /* 2.0 and 2.1 */
 
+#define AR_RADIO_SREV_MAJOR         0xf0
+#define AR_RAD5133_SREV_MAJOR       0x30
+#define AR_RAD2133_SREV_MAJOR       0xb0
+#define AR_RAD5122_SREV_MAJOR       0x70
+#define AR_RAD2122_SREV_MAJOR       0xf0
+
+#define AR_PHY_BASE     0x9800
+#define AR_PHY(_n)      (AR_PHY_BASE + ((_n)<<2))
+
+
 #define AR_SREV_9100 \
 	(macVer == AR_SREV_VERSION_9100)
+#define AR_SREV_9280_10_OR_LATER \
+	(macVer >= AR_SREV_VERSION_9280)
 #define AR_SREV_9300_20_OR_LATER \
 	((macVer > AR_SREV_VERSION_9300) || \
 	 ((macVer == AR_SREV_VERSION_9300) && \
@@ -104,7 +116,7 @@ static struct {
 	{ 0, ""}
 };
 
-static const char *ath9k_hw_name(uint32_t mac_bb_version)
+static const char *ath9k_hw_name(uint16_t mac_bb_version)
 {
 	int i;
 	for (i=0; ath_mac_bb_names[i].version; i++)
@@ -113,19 +125,41 @@ static const char *ath9k_hw_name(uint32_t mac_bb_version)
 	return "????";
 }
 
+/* For devices with external radios */
+static struct {
+	uint16_t version;
+	const char * name;
+} ath_rf_names[] = {
+	{ AR_RAD5133_SREV_MAJOR,	"5133" },
+	{ AR_RAD5122_SREV_MAJOR,	"5122" },
+	{ AR_RAD2133_SREV_MAJOR,	"2133" },
+	{ AR_RAD2122_SREV_MAJOR,	"2122" },
+	{ 0, ""}
+};
+
+static const char *ath9k_rf_name(uint16_t rf_version)
+{
+	int i;
+	for (i=0; ath_rf_names[i].version; i++)
+		if (ath_rf_names[i].version == rf_version)
+			return ath_rf_names[i].name;
+	return "????";
+}
+
 #define WAIT_TIMEOUT 10000 /* x10 us */
 
-uint32_t eeprom_base,
-		 macVer,
-		 macRev;
+uint32_t short_eeprom_base,
+		 short_eeprom_size;
+uint16_t macVer,
+		 macRev,
+		 rfVer,
+		 rfRev;
 bool	 isPCIE;
 
-static uint16_t ath9k_eeprom_read16(struct pcidev *dev, unsigned int addr);
-static uint16_t ath9k_eeprom_read16_short(struct pcidev *dev, unsigned int addr);
+static bool ath9k_eeprom_read16(struct pcidev *dev, unsigned int addr, uint16_t *value);
 static bool ath9k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value);
-static bool ath9k_eeprom_write16_short(struct pcidev *dev, unsigned int addr, uint16_t value);
 
-static void ath9k_read_hw_version(struct pcidev *dev)
+static void ath9k_get_hw_version(struct pcidev *dev)
 {
 	uint32_t val;
 
@@ -144,24 +178,64 @@ static void ath9k_read_hw_version(struct pcidev *dev)
 	}
 }
 
+// ************************************
+
+static void ath9k_get_rf_version(struct pcidev *dev)
+{
+	int i;
+	PCI_OUT32(AR_PHY(0), 0x00000007);
+//	ENABLE_REGWRITE_BUFFER(ah);
+	PCI_OUT32(AR_PHY(0x36), 0x00007058);
+	for (i = 0; i < 8; i++)
+		PCI_OUT32(AR_PHY(0x20), 0x00010000);
+//	REGWRITE_BUFFER_FLUSH(ah);
+//	DISABLE_REGWRITE_BUFFER(ah);
+	rfVer = (PCI_IN32(AR_PHY(0x100)) >> 24) & 0xff;
+	if (!(rfVer & AR_RADIO_SREV_MAJOR))
+		rfVer = AR_RAD5133_SREV_MAJOR;
+}
+
+// ************************************
+
 static bool ath9k_eeprom_lock(struct pcidev *dev) {
+	uint16_t data;
 // reading HW version, some register addresses depends on it
-	ath9k_read_hw_version(dev);
-	printf("HW ver AR%s (PCI%s) rev %04x", ath9k_hw_name(macVer), isPCIE ? "-E" : "", macRev);
+	ath9k_get_hw_version(dev);
+	printf("HW: AR%s (PCI%s) rev %04x\n", ath9k_hw_name(macVer), isPCIE ? "-E" : "", macRev);
+	if (AR_SREV_9280_10_OR_LATER) {
+		printf("RF: integrated\n");
+	} else {
+		ath9k_get_rf_version(dev);
+		printf("RF: AR%s\n", ath9k_rf_name(rfVer & AR_RADIO_SREV_MAJOR));
+	}
 
 // reading EEPROM size and setting it's base address
 // thanks to Inv from forum.ixbt.com
-	dev->ops->eeprom_size = 0;
-	if (376  == ath9k_eeprom_read16(dev,  64))      { dev->ops->eeprom_size =  376; eeprom_base =  64; dev->ops->eeprom_signature = 0x0178; }
-	else if (3256 == ath9k_eeprom_read16(dev, 256)) { dev->ops->eeprom_size = 3256; eeprom_base = 256; dev->ops->eeprom_signature = 0x0cb8; }
-	else if (727  == ath9k_eeprom_read16(dev, 128)) { dev->ops->eeprom_size =  727; eeprom_base = 128; dev->ops->eeprom_signature = 0x02d7; }
-	if (!dev->ops->eeprom_size) {
-		printf("Can't get ath9k eeprom size!\n");
-		return false;
-	} else {
-		printf("ath9k eeprom size: %d\n", dev->ops->eeprom_size);
-		return true;
+	if (ath9k_eeprom_read16(dev,  64, &data) && (376 == data)) {
+		short_eeprom_base =  64;
+		short_eeprom_size = 376;
+		goto ssize_ok;
 	}
+	if (ath9k_eeprom_read16(dev, 256, &data) && (3256 == data)) {
+		short_eeprom_base =  256;
+		short_eeprom_size = 3256;
+		goto ssize_ok;
+	}
+	if (ath9k_eeprom_read16(dev, 128, &data) && (727 == data)) {
+		short_eeprom_base = 128;
+		short_eeprom_size = 727;
+		goto ssize_ok;
+	}
+
+	short_eeprom_base = 0;
+	short_eeprom_size = 0;
+	printf("Can't get ath9k eeprom size!\n");
+//	return false;
+ssize_ok:
+	printf("ath9k short eeprom base: %d  size: %d\n",
+		short_eeprom_base,
+		short_eeprom_size);
+	return true;
 }
 
 static bool ath9k_eeprom_release(struct pcidev *dev) {
@@ -169,7 +243,7 @@ static bool ath9k_eeprom_release(struct pcidev *dev) {
 	return true;
 }
 
-static uint16_t ath9k_eeprom_read16(struct pcidev *dev, unsigned int addr)
+static bool ath9k_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *value)
 {
 	int32_t data;
 	int i;
@@ -182,23 +256,15 @@ static uint16_t ath9k_eeprom_read16(struct pcidev *dev, unsigned int addr)
 		usleep(10);
 		data = PCI_IN32(AR_EEPROM_STATUS_DATA);
 		if ( 0 == (data & (AR_EEPROM_STATUS_DATA_BUSY | AR_EEPROM_STATUS_DATA_PROT_ACCESS))) {
-			data &= AR_EEPROM_STATUS_DATA_VAL;
-			return data;
+			*value = data & AR_EEPROM_STATUS_DATA_VAL;
+			return true;
 		}
 	}
 	printf("timeout reading ath9k eeprom at %04x!\n", addr);
-	return 0;
+	return false;
 }
 
-static uint16_t ath9k_eeprom_read16_short(struct pcidev *dev, unsigned int addr)
-{
-	if (!dev->mem)
-		return buf_read16(addr);
-
-	return ath9k_eeprom_read16(dev, addr + eeprom_base);
-}
-
-static bool ath9k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
+static bool ath9k_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t value)
 {
 	int i;
 	uint32_t data;
@@ -246,33 +312,41 @@ static bool ath9k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t
 	return !!i;
 }
 
-static bool ath9k_eeprom_write16_short(struct pcidev *dev, unsigned int addr, uint16_t value)
+static bool ath9k_eeprom_write16_short(struct pcidev *dev, uint32_t addr, uint16_t value)
 {
 	if (!dev->mem)
 		return buf_write16(addr, value);
 
-	return ath9k_eeprom_write16(dev, addr + eeprom_base, value);
+	// just return, if address out of 'short' eeprom bounds
+	if ((addr < short_eeprom_base) || (addr >= (short_eeprom_base + short_eeprom_size)))
+		return false;
+
+	return ath9k_eeprom_write16(dev, addr, value);
 }
 
 static void ath9k_eeprom_patch11n(struct pcidev *dev)
 {
+	if (!short_eeprom_size) {
+		printf("Unknown short EEPROM size -> can't patch!\n");
+		return;
+	}
+
 	printf("ath9k 802.11n patch not implemented yet.\n");
 }
 
 struct dev_ops dev_ops_ath9k = {
 	.name			 = "ath9k",
-	.mmap_size        = ATH_MMAP_LENGTH,
-	//.eeprom_size	  = ATH9K_EEPROM_SIZE
-	.eeprom_size	  = 0,
-	.eeprom_signature = 0,
+	.mmap_size        = ATH9K_MMAP_LENGTH,
+	.eeprom_size	  = ATH9K_EEPROM_SIZE,
+	.eeprom_signature = ATH9K_EEPROM_SIGNATURE,
 	.eeprom_writable  = true,
 
 	.init_device	 = NULL,
 	.eeprom_check    = NULL,
 	.eeprom_lock     = &ath9k_eeprom_lock,
 	.eeprom_release  = &ath9k_eeprom_release,
-	.eeprom_read16   = &ath9k_eeprom_read16_short,
-	.eeprom_write16  = &ath9k_eeprom_write16_short,
+	.eeprom_read16   = &ath9k_eeprom_read16,
+	.eeprom_write16  = &ath9k_eeprom_write16,
 	.eeprom_patch11n = &ath9k_eeprom_patch11n,
 	.eeprom_parse    = NULL
 };
