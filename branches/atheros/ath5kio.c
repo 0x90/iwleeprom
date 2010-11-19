@@ -40,9 +40,8 @@
 #include "ath5kio.h"
 
 #define ATH5K_EEPROM_SIZE  0x800
-
-#define ATH_EEPROM_SIGNATURE    0x7801
-#define ATH_MMAP_LENGTH 0x10000
+#define ATH5K_EEPROM_SIGNATURE    0x0000
+#define ATH5K_MMAP_LENGTH 0x10000
 
 #define AR5K_PCICFG 0x4010 
 #define AR5K_PCICFG_EEAE 0x00000001 
@@ -70,12 +69,12 @@ static bool ath5k_eeprom_lock(struct pcidev *dev) { return true; }
 
 static bool ath5k_eeprom_release(struct pcidev *dev) { return true; }
 
-static uint16_t ath5k_eeprom_read16(struct pcidev *dev, unsigned int addr)
+static bool ath5k_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *value)
 {
 	int timeout = 10000 ;
  	unsigned long int status ;
 	if (!dev->mem)
-		return buf_read16(addr);
+		return buf_read16(addr, value);
 
  	PCI_OUT32(AR5211_EEPROM_CONF, 0),
  	usleep( 5 ) ;
@@ -95,19 +94,20 @@ static uint16_t ath5k_eeprom_read16(struct pcidev *dev, unsigned int addr)
  		status = PCI_IN32(AR5211_EEPROM_STATUS) ;
  		if (status & AR5211_EEPROM_STAT_RDDONE) {
  			if (status & AR5211_EEPROM_STAT_RDERR) {
- 				printf( "eeprom read access failed at %04x!\n", addr);
-				return 0;
+ 				printf( "\neeprom read access failed at %04x!\n", addr);
+				return false;
  			}
  			status = PCI_IN32(AR5211_EEPROM_DATA) ;
- 			return (status & 0x0000ffff);
+			*value = status & 0x0000ffff;
+ 			return true;
  		}
  		timeout-- ;
  	}
- 	printf( "eeprom read timeout at %04x!\n", addr);
-	return 0;
+ 	printf( "\neeprom read timeout at %04x!\n", addr);
+	return false;
 }
 
-static bool ath5k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
+static bool ath5k_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t value)
 {
  	int timeout = 10000 ;
  	unsigned long int status ;
@@ -153,7 +153,7 @@ static bool ath5k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t
  		status = PCI_IN32( AR5211_EEPROM_STATUS );
  		if ( status & 0xC ) {
  			if ( status & AR5211_EEPROM_STAT_WRERR ) {
- 				printf("eeprom write access failed!\n");
+ 				printf("\neeprom write access failed!\n");
 				return false;
 			}
 
@@ -164,10 +164,13 @@ static bool ath5k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t
  		usleep( 10 ) ;
  		timeout--;
  	}
- 	sdata = dev->ops->eeprom_read16( dev, addr) ;
+ 	if (!dev->ops->eeprom_read16( dev, addr, &sdata)) {
+ 		fprintf( stderr, "\nWrite verify: read failed!\n");
+		return false;
+	}
  	if ( ( sdata != value ) && i ) {
  		--i ;
- 		fprintf( stderr, "Retrying eeprom write!\n");
+ 		fprintf( stderr, "\nRetrying eeprom write!\n");
  		goto retry ;
  	}
 	return true;
@@ -175,9 +178,9 @@ static bool ath5k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t
 
 struct dev_ops dev_ops_ath5k = {
 	.name			 = "ath5k",
-	.mmap_size        = ATH_MMAP_LENGTH,
+	.mmap_size        = ATH5K_MMAP_LENGTH,
 	.eeprom_size      = ATH5K_EEPROM_SIZE,
-	.eeprom_signature = 0,
+	.eeprom_signature = ATH5K_EEPROM_SIGNATURE,
 	.eeprom_writable  = true,
 
 	.init_device	 = NULL,

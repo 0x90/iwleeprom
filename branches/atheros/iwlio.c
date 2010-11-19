@@ -139,8 +139,13 @@ const struct iwl_regulatory_item iwl_regulatory[] =
 };
 
 
-static void iwl_init_device(struct pcidev *dev)
+static bool iwl_init_device(struct pcidev *dev)
 {
+	uint16_t data;
+
+retry_init:
+	if (!dev->ops->eeprom_release(dev)) return false;
+
 	PCI_OUT32(0x100, PCI_IN32(0x100) | 0x20000000);
 	usleep(20);
 
@@ -157,10 +162,18 @@ static void iwl_init_device(struct pcidev *dev)
 	usleep(20);
 
 	PCI_OUT32(0x24, PCI_IN32(0x24) | 0x00000004);
-	usleep(20);
+	usleep(50);
 
+	if (!dev->ops->eeprom_lock(dev))
+		return false;
+	if (!dev->ops->eeprom_read16(dev, 0, &data))
+		goto retry_init;
+
+	if (!dev->ops->eeprom_release(dev))
+		return false;
 	if (debug)
-		printf("Device has been inited.\n");
+		printf("Device init successfull.\n");
+	return true;
 }
 
 static void iwl_6k_eeprom_check(struct pcidev *dev)
@@ -180,7 +193,7 @@ static bool iwl_eeprom_lock(struct pcidev *dev)
 
 	dev->eeprom_locked = ( 0x00200000 == (data & 0x00200000));
 	if (!dev->eeprom_locked)
-		printf("err! ucode is using eeprom!\n");
+		printf("\nerr! ucode is using eeprom!\n");
 	return (dev->eeprom_locked);
 }
 
@@ -194,29 +207,30 @@ static bool iwl_eeprom_release(struct pcidev *dev)
 
 	dev->eeprom_locked = ( 0x00200000 == (data & 0x00200000));
 	if (dev->eeprom_locked)
-		printf("err! software is still using eeprom!\n");
+		printf("\nerr! software is still using eeprom!\n");
 	dev->eeprom_locked = 0;
 	return (!dev->eeprom_locked);
 }
 
-static uint16_t iwl_eeprom_read16(struct pcidev *dev, unsigned int addr)
+static bool iwl_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *value)
 {
 	unsigned int data = 0x0000FFFC & (addr << 1);
 	if (!dev->mem)
-		return buf_read16(addr);
+		return buf_read16(addr, value);
 
 	PCI_OUT32(CSR_EEPROM_REG, data);
 	usleep(50);
 	data = PCI_IN32(CSR_EEPROM_REG);
 	if ((data & 1) != 1) {
-		printf("Read not complete! Timeout at %04x\n", addr);
-		return 0;
+		printf("\nRead not complete! Timeout at %04x\n", addr);
+		return false;
 	}
 
-	return ((data & 0xFFFF0000) >> 16);
+	*value = (data & 0xFFFF0000) >> 16;
+	return true;
 }
 
-static bool iwl_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value)
+static bool iwl_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t value)
 {
 	if (!dev->mem)
 		return buf_write16(addr, value);
@@ -239,12 +253,12 @@ static bool iwl_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t v
 	usleep(50);
 	data = PCI_IN32(CSR_EEPROM_REG);
 	if ((data & 1) != 1) {
-		printf("Read not complete! Timeout at %04x\n", addr);
+		printf("\nRead not complete! Timeout at %04x\n", addr);
 		return false;
 	}
 
 	if (value != (data >> 16)) {
-		printf("Verification error at %04x\n", addr);
+		printf("\nVerification error at %04x\n", addr);
 		return false;
 	}
 	return true;
@@ -276,7 +290,7 @@ static void iwl_eeprom_patch11n(struct pcidev *dev)
 
 	printf("-> Changing subdev ID\n");
 
-	value = dev->ops->eeprom_read16(dev, 0x14);
+	dev->ops->eeprom_read16(dev, 0x14, &value);
 	if (0x0006 == (value & 0x000F)) {
 		dev->ops->eeprom_write16(dev, 0x14, (value & 0xFFF0) | 0x0001);
 	}
@@ -289,14 +303,14 @@ W @8C << 103E (603F) <- x001 xxxx xxxx xxx0
 
 	printf("-> Enabling 11n mode\n");
 // SKU_CAP
-	value = dev->ops->eeprom_read16(dev, 0x8A);
+	dev->ops->eeprom_read16(dev, 0x8A, &value);
 	if (0x0040 != (value & 0x0040)) {
 		printf("  SKU CAP\n");
 		dev->ops->eeprom_write16(dev, 0x8A, value | 0x0040);
 	}
 
 // OEM_MODE
-	value = dev->ops->eeprom_read16(dev, 0x8C);
+	dev->ops->eeprom_read16(dev, 0x8C, &value);
 	if (0x1000 != (value & 0x7001)) {
 		printf("  OEM MODE\n");
 		dev->ops->eeprom_write16(dev, 0x8C, (value & 0x9FFE) | 0x1000);
@@ -305,8 +319,8 @@ W @8C << 103E (603F) <- x001 xxxx xxxx xxx0
 /*
 writing SKU ID - 'MoW' signature
 */
-	sig[0] = dev->ops->eeprom_read16(dev, sig_offs);
-	sig[1] = dev->ops->eeprom_read16(dev, sig_offs+2);
+	dev->ops->eeprom_read16(dev, sig_offs, sig );
+	dev->ops->eeprom_read16(dev, sig_offs+2, sig+1 );
 
 	if (0x6f4d != sig[0])
 		dev->ops->eeprom_write16(dev, sig_offs, 0x6f4d);
@@ -316,16 +330,17 @@ writing SKU ID - 'MoW' signature
 	printf("-> Checking and adding channels...\n");
 // reading regulatory offset
 	if (is4965)
-		reg_offs = 0x00be;
+		reg_offs = 0x005f;
 	else
-		reg_offs = 2 * dev->ops->eeprom_read16(dev, 0xCC);
+		dev->ops->eeprom_read16(dev, 0xCC, &reg_offs);
+	reg_offs <<= 1;
 	printf("Regulatory base: %04x\n", reg_offs);
 /*
 writing channels regulatory...
 */
 	for (idx=0; iwl_regulatory[idx].offs; idx++) {
+		dev->ops->eeprom_read16(dev, chn_offs, &chn_data);
 		chn_offs = reg_offs + iwl_regulatory[idx].offs;
-		chn_data = dev->ops->eeprom_read16(dev, chn_offs);
 		new_data = iwl_regulatory[idx].data;
 
 		if (new_data != chn_data) {
@@ -368,20 +383,19 @@ static void iwl_eeprom_parse(struct pcidev *dev)
 		sig_offs = 0xC0;
 	}
 	
-	vid = dev->ops->eeprom_read16(dev, 0x0e);
-	did = dev->ops->eeprom_read16(dev, 0x10);
-	svid = dev->ops->eeprom_read16(dev, 0x12);
-	sdid = dev->ops->eeprom_read16(dev, 0x14);
-
-	ver = dev->ops->eeprom_read16(dev, 0x88);
+	dev->ops->eeprom_read16(dev, 0x0e, &vid);
+	dev->ops->eeprom_read16(dev, 0x10, &did);
+	dev->ops->eeprom_read16(dev, 0x12, &svid);
+	dev->ops->eeprom_read16(dev, 0x14, &sdid);
+	dev->ops->eeprom_read16(dev, 0x88, &ver);
 
 	printf("\nDevice ID   : %04x:%04x, %04x:%04x\n",	vid, did, svid, sdid);
 	printf("EEPROM ver  : %04x\n", ver);
 
-	sku_cap  = dev->ops->eeprom_read16(dev, 0x8A);
-	oem_mode = dev->ops->eeprom_read16(dev, 0x8C);
-	sig[0] = dev->ops->eeprom_read16(dev, sig_offs);
-	sig[1] = dev->ops->eeprom_read16(dev, sig_offs+2);
+	dev->ops->eeprom_read16(dev, 0x8A, &sku_cap);
+	dev->ops->eeprom_read16(dev, 0x8C, &oem_mode);
+	dev->ops->eeprom_read16(dev, sig_offs, sig);
+	dev->ops->eeprom_read16(dev, sig_offs+2, sig+1);
 
 
 	mode11n = (0x0040 == ( sku_cap & 0x0040)) &&
@@ -394,10 +408,10 @@ static void iwl_eeprom_parse(struct pcidev *dev)
 	printf("SIG [0] : %04x\n", sig[0]);
 	printf("SIG [1] : %04x\n", sig[1]);
 */	
-	mac[0] = dev->ops->eeprom_read16(dev, 0x2a);
-	mac[1] = dev->ops->eeprom_read16(dev, 0x2c);
-	mac[2] = dev->ops->eeprom_read16(dev, 0x2e);
-	radio = dev->ops->eeprom_read16(dev, 0x90);
+	dev->ops->eeprom_read16(dev, 0x2a, mac);
+	dev->ops->eeprom_read16(dev, 0x2c, mac+1);
+	dev->ops->eeprom_read16(dev, 0x2e, mac+2);
+	dev->ops->eeprom_read16(dev, 0x90, &radio);
 
 
 	printf("MAC address : %02x:%02x:%02x:%02x:%02x:%02x\n",
@@ -416,14 +430,15 @@ static void iwl_eeprom_parse(struct pcidev *dev)
 
 #ifdef PARSE_SHOW_CHANNELS
 	if (is4965)
-		reg_offs = 0x00be;
+		reg_offs = 0x005f;
 	else
-		reg_offs = 2 * dev->ops->eeprom_read16(dev, 0xCC);
+		dev->ops->eeprom_read16(dev, 0xCC, &reg_offs);
+	reg_offs <<= 1;
 	printf("Regulatory base: %04x\n", reg_offs);
 	printf("Enabled channels:\n");
 
 	for (idx=0; iwl_regulatory[idx].offs; idx++) {
-		chn_data = dev->ops->eeprom_read16(dev, reg_offs + iwl_regulatory[idx].offs);
+		dev->ops->eeprom_read16(dev, reg_offs + iwl_regulatory[idx].offs, &chn_data);
 		if (chn_data) {
 			printf("  %3d (%s%s) %d mW, flags %02x\n",
 					iwl_regulatory[idx].chn & CHN_MASK,

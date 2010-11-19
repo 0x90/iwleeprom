@@ -84,7 +84,7 @@ extern unsigned int  debug;
 extern bool preserve_mac;
 extern bool preserve_calib;
 
-extern const uint16_t buf_read16(unsigned int addr);
+extern bool buf_read16(unsigned int addr, uint16_t *value);
 extern bool buf_write16(unsigned int addr, uint16_t value);
 
 struct dev_ops {
@@ -94,12 +94,12 @@ struct dev_ops {
 	uint16_t		  eeprom_signature;
 	bool			  eeprom_writable;
 
-	void (*init_device)(struct pcidev *dev);
+	bool (*init_device)(struct pcidev *dev);
 	void (*eeprom_check)(struct pcidev *dev);
 	bool (*eeprom_lock)(struct pcidev *dev);
 	bool (*eeprom_release)(struct pcidev *dev);
-	uint16_t (*eeprom_read16)(struct pcidev *dev, unsigned int addr);
-	bool (*eeprom_write16)(struct pcidev *dev, unsigned int addr, uint16_t value);
+	bool (*eeprom_read16)(struct pcidev *dev, uint32_t addr, uint16_t *value);
+	bool (*eeprom_write16)(struct pcidev *dev, uint32_t addr, uint16_t value);
 
 	void (*eeprom_patch11n)(struct pcidev *dev);
 	void (*eeprom_parse)(struct pcidev *dev);
