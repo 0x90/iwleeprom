@@ -527,12 +527,13 @@ int main(int argc, char** argv)
 					"Options:\n"
 					"\t-d <device> | --device <device>\t\t"
 					"device in format 0000:00:00.0 (domain:bus:dev.func)\n"
-					"\t-n | --nodev\t"
+					"\t-n | --nodev\t\t\t\t"
 					"don't touch any device, file-only operations\n"
-					"\t-m | --preserve-mac\t"
+					"\t-m | --preserve-mac\t\t\t"
 					"don't change card's MAC while writing full eeprom dump\n"
-					"\t-c | --preserve-calib\t"
+					"\t-c | --preserve-calib\t\t\t"
 					"don't change calibration data while writing full eeprom dump\n"
+					"\t\t\t\t\t\t(not supported by ath9k)\n"
 					"\t-o <filename> | --ofile <filename>\t"
 					"dump eeprom to binary file\n"
 					"\t-i <filename> | --ifile <filename>\t"
@@ -572,12 +573,14 @@ int main(int argc, char** argv)
 		valid_ids[dev.idx].name);
 	printf("IO driver: %s\n",
 		dev.ops->name);
-	printf("Supported ops: %s%s%s%s\n",
-		dev.ops->eeprom_read16 ? " read" : "",
-		(dev.ops->eeprom_writable && dev.ops->eeprom_write16)  ? " write" : "",
-		dev.ops->eeprom_parse ? " parse" : "",
-		dev.ops->eeprom_patch11n ? " patch11n" : ""
-	);
+
+	if (debug)
+		printf("Supported ops: %s%s%s%s\n",
+			dev.ops->eeprom_read16 ? " read" : "",
+			(dev.ops->eeprom_writable && dev.ops->eeprom_write16)  ? " write" : "",
+			dev.ops->eeprom_parse ? " parse" : "",
+			dev.ops->eeprom_patch11n ? " patch11n" : ""
+		);
 
 
 	map_device();
