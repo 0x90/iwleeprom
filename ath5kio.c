@@ -84,7 +84,7 @@ static bool ath5k_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *val
  	usleep( 5 ) ;
  
  	/** set address */
- 	PCI_OUT32( AR5211_EEPROM_ADDR, addr) ;
+ 	PCI_OUT32( AR5211_EEPROM_ADDR, addr >> 1) ;
  	usleep( 5 ) ;
  
  	PCI_OUT32( AR5211_EEPROM_COMD, PCI_IN32(AR5211_EEPROM_COMD) | AR5211_EEPROM_COMD_READ) ;
@@ -143,7 +143,7 @@ static bool ath5k_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t val
  	usleep( 5 ) ;
  
  	/** set address */
- 	PCI_OUT32(AR5211_EEPROM_ADDR, addr);
+ 	PCI_OUT32(AR5211_EEPROM_ADDR, addr >> 1);
  	usleep( 5 ) ;
  
  	PCI_OUT32(AR5211_EEPROM_COMD, AR5211_EEPROM_COMD_WRITE);
