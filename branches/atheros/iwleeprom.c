@@ -204,9 +204,9 @@ bool buf_read16(uint32_t addr, uint16_t *value)
 {
 	if (addr >= EEPROM_SIZE_MAX) return 0;
 	if (dump_order == order_le)
-		*value = le2cpu16(buf[addr/2]);
+		*value = le2cpu16(buf[addr >> 1]);
 	else
-		*value = be2cpu16(buf[addr/2]);
+		*value = be2cpu16(buf[addr >> 1]);
 	return true;
 }
 
@@ -214,9 +214,9 @@ bool buf_write16(uint32_t addr, uint16_t value)
 {
 	if (addr >= EEPROM_SIZE_MAX) return false;
 	if (dump_order == order_le)
-		buf[addr/2] = cpu2le16(value);
+		buf[addr >> 1] = cpu2le16(value);
 	else
-		buf[addr/2] = cpu2be16(value);
+		buf[addr >> 1] = cpu2be16(value);
 	return true;
 }
 
@@ -568,10 +568,17 @@ int main(int argc, char** argv)
 
 	printf("Using device %s [%s] %s \n",
 		dev.device,
-		valid_ids[dev.idx].ops->eeprom_writable ? "RW" : "RO",
+		dev.ops->eeprom_writable ? "RW" : "RO",
 		valid_ids[dev.idx].name);
 	printf("IO driver: %s\n",
 		dev.ops->name);
+	printf("Supported ops: %s%s%s%s\n",
+		dev.ops->eeprom_read16 ? " read" : "",
+		(dev.ops->eeprom_writable && dev.ops->eeprom_write16)  ? " write" : "",
+		dev.ops->eeprom_parse ? " parse" : "",
+		dev.ops->eeprom_patch11n ? " patch11n" : ""
+	);
+
 
 	map_device();
 
@@ -600,10 +607,10 @@ int main(int argc, char** argv)
 	if (parse && dev.ops->eeprom_parse)
 		dev.ops->eeprom_parse(&dev);
 
-	if (ifname && valid_ids[dev.idx].ops->eeprom_writable)
+	if (ifname && dev.ops->eeprom_writable)
 		eeprom_write(ifname);
 
-	if (patch11n && valid_ids[dev.idx].ops->eeprom_writable)
+	if (patch11n && dev.ops->eeprom_writable)
 		dev.ops->eeprom_patch11n(&dev);
 
 	if (parse && dev.ops->eeprom_parse && (ifname || patch11n)) {

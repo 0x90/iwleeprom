@@ -26,13 +26,20 @@
 
 #include "ath9kio.h"
 
-#define ATH9K_EEPROM_SIZE           0x0800
+#define ATH9K_EEPROM_SIZE           0x1000
 #define ATH9K_EEPROM_SIGNATURE      0xA55A
 #define ATH9K_MMAP_LENGTH          0x10000
 
 
 #define AR5416_EEPROM_S             2
 #define AR5416_EEPROM_OFFSET        0x2000
+
+#define AR5416_OPFLAGS_11A          0x01
+#define AR5416_OPFLAGS_11G          0x02
+#define AR5416_OPFLAGS_N_5G_HT40    0x04
+#define AR5416_OPFLAGS_N_2G_HT40    0x08
+#define AR5416_OPFLAGS_N_5G_HT20    0x10
+#define AR5416_OPFLAGS_N_2G_HT20    0x20
 
 
 #define AR_SREV_VERSION_5416_PCI    0x00D
@@ -211,18 +218,18 @@ static bool ath9k_eeprom_lock(struct pcidev *dev) {
 
 // reading EEPROM size and setting it's base address
 // thanks to Inv from forum.ixbt.com
-	if (ath9k_eeprom_read16(dev,  64, &data) && (376 == data)) {
-		short_eeprom_base =  64;
+	if (ath9k_eeprom_read16(dev, 128, &data) && (376 == data)) {
+		short_eeprom_base = 128;
 		short_eeprom_size = 376;
 		goto ssize_ok;
 	}
-	if (ath9k_eeprom_read16(dev, 256, &data) && (3256 == data)) {
-		short_eeprom_base =  256;
+	if (ath9k_eeprom_read16(dev, 512, &data) && (3256 == data)) {
+		short_eeprom_base =  512;
 		short_eeprom_size = 3256;
 		goto ssize_ok;
 	}
-	if (ath9k_eeprom_read16(dev, 128, &data) && (727 == data)) {
-		short_eeprom_base = 128;
+	if (ath9k_eeprom_read16(dev, 256, &data) && (727 == data)) {
+		short_eeprom_base = 256;
 		short_eeprom_size = 727;
 		goto ssize_ok;
 	}
@@ -238,8 +245,41 @@ ssize_ok:
 	return true;
 }
 
+static bool ath9k_eeprom_crc_calc(struct pcidev *dev, uint16_t *crcp)
+{
+	uint16_t crc = 0, data;
+	int i;
+
+	if (!short_eeprom_size)
+		return false;
+
+	for (i=0; i<short_eeprom_size; i+=2) {
+		if (2 == i) continue;
+		if (!ath9k_eeprom_read16(dev, short_eeprom_base + i, &data))
+			return false;
+		crc ^= data;
+	}
+	crc ^= 0xFFFF;
+	if (crcp)
+		*crcp = crc;
+	return true;
+}
+
+static bool ath9k_eeprom_crc_update(struct pcidev *dev)
+{
+	uint16_t crc, crc_n;
+	if (short_eeprom_base) {
+		dev->ops->eeprom_read16(dev, short_eeprom_base+2, &crc);
+		ath9k_eeprom_crc_calc(dev, &crc_n);
+		if (crc != crc_n) {
+			printf("Updating CRC: %04x -> %04x\n", crc, crc_n);
+			dev->ops->eeprom_write16(dev, short_eeprom_base+2, crc_n);
+		}
+	}
+	return true;
+}
+
 static bool ath9k_eeprom_release(struct pcidev *dev) {
-// CRC calc should be here
 	return true;
 }
 
@@ -249,7 +289,7 @@ static bool ath9k_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *val
 	int i;
 
 // requesting data
-	data = PCI_IN32(AR5416_EEPROM_OFFSET + (addr << AR5416_EEPROM_S));
+	data = PCI_IN32(AR5416_EEPROM_OFFSET + ((addr >> 1) << AR5416_EEPROM_S));
 
 // waiting...
 	for(i = WAIT_TIMEOUT; i; i--) {
@@ -273,6 +313,9 @@ static bool ath9k_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t val
 			gpio_oe_out,
 			gpio_in_out;
 
+	if (preserve_mac && short_eeprom_base && (addr>=(short_eeprom_base+0x0c) && addr<(short_eeprom_base+0x12)))
+		return true;
+
 // selecting GPIO
 	gpio_out_mux1 = PCI_IN32(AR_GPIO_OUTPUT_MUX1);
 	PCI_OUT32(AR_GPIO_OUTPUT_MUX1, gpio_out_mux1 & 0xFFF07FFF);
@@ -289,7 +332,7 @@ static bool ath9k_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t val
 	usleep(10);
 
 // sending data
-	PCI_OUT16(AR5416_EEPROM_OFFSET + (addr << AR5416_EEPROM_S), value);
+	PCI_OUT16(AR5416_EEPROM_OFFSET + ((addr >> 1) << AR5416_EEPROM_S), value);
 
 // waiting...
 	for(i = WAIT_TIMEOUT; i; i--) {
@@ -314,24 +357,88 @@ static bool ath9k_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t val
 
 static bool ath9k_eeprom_write16_short(struct pcidev *dev, uint32_t addr, uint16_t value)
 {
+	// just return, if address out of 'short' eeprom bounds
+	if ((addr <= short_eeprom_base) || (addr >= (short_eeprom_base + short_eeprom_size)))
+		return false;
 	if (!dev->mem)
 		return buf_write16(addr, value);
-
-	// just return, if address out of 'short' eeprom bounds
-	if ((addr < short_eeprom_base) || (addr >= (short_eeprom_base + short_eeprom_size)))
-		return false;
 
 	return ath9k_eeprom_write16(dev, addr, value);
 }
 
 static void ath9k_eeprom_patch11n(struct pcidev *dev)
 {
+	uint16_t
+		opCap,
+		regDmn;
 	if (!short_eeprom_size) {
 		printf("Unknown short EEPROM size -> can't patch!\n");
 		return;
 	}
 
-	printf("ath9k 802.11n patch not implemented yet.\n");
+	printf("Patching card EEPROM...\n");
+
+	dev->ops->eeprom_read16(dev, short_eeprom_base + 6, &opCap);
+	dev->ops->eeprom_read16(dev, short_eeprom_base + 8, &regDmn);
+
+	printf("Reg. domain : %04x\n", regDmn);
+	printf("       Bands: %s%s\n",
+		(opCap & AR5416_OPFLAGS_11A) ? " 5GHz" : "",
+		(opCap & AR5416_OPFLAGS_11G) ? " 2.4GHz" : "");
+
+	regDmn = 0x6A;
+	if (opCap & AR5416_OPFLAGS_11G)
+		opCap &= ~(AR5416_OPFLAGS_N_2G_HT20 | AR5416_OPFLAGS_N_2G_HT40);
+	if (opCap & AR5416_OPFLAGS_11A)
+		opCap &= ~(AR5416_OPFLAGS_N_5G_HT20 | AR5416_OPFLAGS_N_5G_HT40);
+
+	dev->ops->eeprom_write16(dev, short_eeprom_base + 6, opCap);
+	dev->ops->eeprom_write16(dev, short_eeprom_base + 8, regDmn);
+
+	ath9k_eeprom_crc_update(dev);
+}
+
+static void ath9k_eeprom_parse(struct pcidev *dev)
+{
+
+	uint16_t
+		crc, crc_n,
+		opCap,
+		regDmn,
+		mac[3];
+
+	dev->ops->eeprom_read16(dev, short_eeprom_base + 2, &crc);
+	dev->ops->eeprom_read16(dev, short_eeprom_base + 6, &opCap);
+	dev->ops->eeprom_read16(dev, short_eeprom_base + 8, &regDmn);
+
+	dev->ops->eeprom_read16(dev, short_eeprom_base +12, mac);
+	dev->ops->eeprom_read16(dev, short_eeprom_base +14, mac+1);
+	dev->ops->eeprom_read16(dev, short_eeprom_base +16, mac+2);
+
+	printf("MAC address : %02x:%02x:%02x:%02x:%02x:%02x\n",
+			mac[0] & 0xFF,  mac[0] >> 8, 
+			mac[1] & 0xFF,  mac[1] >> 8, 
+			mac[2] & 0xFF,  mac[2] >> 8);
+
+	printf("Reg. domain : %04x\n", regDmn);
+	printf("Capabilities: %04x\n"
+		   "       Bands: %s%s\n", opCap,
+		(opCap & AR5416_OPFLAGS_11A) ? " 5GHz" : "",
+		(opCap & AR5416_OPFLAGS_11G) ? " 2.4GHz" : "");
+
+	printf("       HT 2G: %s%s\n",
+		(opCap & AR5416_OPFLAGS_N_2G_HT20) ? "":" HT20",
+		(opCap & AR5416_OPFLAGS_N_2G_HT40) ? "":" HT40");
+	printf("       HT 5G: %s%s\n",
+		(opCap & AR5416_OPFLAGS_N_5G_HT20) ? "":" HT20",
+		(opCap & AR5416_OPFLAGS_N_5G_HT40) ? "":" HT40");
+
+	printf("CRC (stored): %04x\n", crc);
+
+	if (ath9k_eeprom_crc_calc(dev, &crc_n))
+		printf("CRC (eval)  : %04x\n", crc_n);
+	else
+		printf("error calculating CRC!\n");
 }
 
 struct dev_ops dev_ops_ath9k = {
@@ -346,8 +453,8 @@ struct dev_ops dev_ops_ath9k = {
 	.eeprom_lock     = &ath9k_eeprom_lock,
 	.eeprom_release  = &ath9k_eeprom_release,
 	.eeprom_read16   = &ath9k_eeprom_read16,
-	.eeprom_write16  = &ath9k_eeprom_write16,
+	.eeprom_write16  = &ath9k_eeprom_write16_short,
 	.eeprom_patch11n = &ath9k_eeprom_patch11n,
-	.eeprom_parse    = NULL
+	.eeprom_parse    = &ath9k_eeprom_parse
 };
 
