@@ -428,7 +428,8 @@ static void iwl_eeprom_parse(struct pcidev *dev)
 	);
 	printf("Mode 802.11n: %sabled\n", mode11n ? "en" : "dis");
 
-#ifdef PARSE_SHOW_CHANNELS
+	if (debug < 1) return;
+
 	if (is4965)
 		reg_offs = 0x005f;
 	else
