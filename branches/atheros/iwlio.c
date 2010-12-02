@@ -450,7 +450,6 @@ static void iwl_eeprom_parse(struct pcidev *dev)
 			);
 		}
 	}
-#endif
 }
 
 struct dev_ops dev_ops_iwl4965 = {
