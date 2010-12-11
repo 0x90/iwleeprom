@@ -522,8 +522,9 @@ int main(int argc, char** argv)
 			case 'h':
 				die("EEPROM reader/writer for intel wifi cards\n\n"
 					"Usage:\n"
-					"\t%s [-d device] [-r filename [-b]] [-w filename] [-p] [-D debug_level]\n"
-					"\t%s -l\n\n"
+					"\t%s [-d device [-m] [-c] | -n] [-I] [-i filename ] [-o filename [-b] ] [-P] [-p] [-D debug_level]\n"
+					"\t%s -l\n"
+					"\t%s -h\n\n"
 					"Options:\n"
 					"\t-d <device> | --device <device>\t\t"
 					"device in format 0000:00:00.0 (domain:bus:dev.func)\n"
@@ -551,7 +552,7 @@ int main(int argc, char** argv)
 					"\t-D <level> | --debug <level>\t\t"
 					"set debug level (0-1, default 0)\n"
 					"\t-h | --help\t\t\t\t"
-					"show this info\n", argv[0], argv[0]);
+					"show this info\n", argv[0], argv[0], argv[0]);
 			default:
 				return 1;
 		}
