@@ -339,19 +339,19 @@ writing SKU ID - 'MoW' signature
 writing channels regulatory...
 */
 	for (idx=0; iwl_regulatory[idx].offs; idx++) {
-		dev->ops->eeprom_read16(dev, chn_offs, &chn_data);
 		chn_offs = reg_offs + iwl_regulatory[idx].offs;
 		new_data = iwl_regulatory[idx].data;
+		dev->ops->eeprom_read16(dev, chn_offs, &chn_data);
 
 		if (new_data != chn_data) {
-			printf("  %3d (%s%s)   %2d->%2d mW, flags %02x->%02x\n",
+			printf("  %3d (%s%s)   %2d->%2d dBm, flags %02x->%02x\n",
 					 iwl_regulatory[idx].chn & CHN_MASK,
 					(iwl_regulatory[idx].chn & CHN_2G) ? "2.4G" : "5G",
 					(iwl_regulatory[idx].chn & CHN_HT40) ? ", HT40" : "",
 					chn_data >> 8, new_data >> 8,
 					chn_data & 0xFF, new_data & 0xFF
 			);
-			dev->ops->eeprom_write16(dev, chn_offs, iwl_regulatory[idx].data);
+			dev->ops->eeprom_write16(dev, chn_offs, new_data);
 		}
 	}
 
@@ -441,7 +441,7 @@ static void iwl_eeprom_parse(struct pcidev *dev)
 	for (idx=0; iwl_regulatory[idx].offs; idx++) {
 		dev->ops->eeprom_read16(dev, reg_offs + iwl_regulatory[idx].offs, &chn_data);
 		if (chn_data) {
-			printf("  %3d (%s%s) %d mW, flags %02x\n",
+			printf("  %3d (%s%s) %d dBm, flags %02x\n",
 					iwl_regulatory[idx].chn & CHN_MASK,
 					(iwl_regulatory[idx].chn & CHN_2G) ? "2.4G" : "5G",
 					(iwl_regulatory[idx].chn & CHN_HT40) ? ", HT40" : "",
