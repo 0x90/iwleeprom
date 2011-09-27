@@ -591,8 +591,6 @@ int main(int argc, char** argv)
 
 	if (debug)
 		printf("address: %08x\n", offset);
-	if (dev.ops->eeprom_check)
-		dev.ops->eeprom_check(&dev);
 
 	if(!ifname && !ofname && !patch11n && !parse)
 		printf("No file names given nor actions selected!\nNo EEPROM actions will be performed, just write-enable test\n");
@@ -601,6 +599,9 @@ int main(int argc, char** argv)
 
 	if (init_device && dev.ops->init_device && !dev.ops->init_device(&dev))
 		die("Device init failed!\n");
+
+	if (dev.ops->eeprom_check)
+		dev.ops->eeprom_check(&dev);
 
 	if (dev.ops->eeprom_lock && !dev.ops->eeprom_lock(&dev))
 		die("Failed to lock eeprom!\n");
