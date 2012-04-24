@@ -62,7 +62,9 @@ static struct option long_options[] = {
 	{"list",      0, NULL, 'l'},
 	{"debug",     1, NULL, 'D'},
 	{"init",      0, NULL, 'I'},
-	{"patch11n",  0, NULL, 'p'}
+	{"patch11n",  0, NULL, 'p'},
+	{"all-channels",  0, NULL, 'a'},
+	{"show-regulatory",  0, NULL, 's'}
 };
 
 struct pcidev_id
@@ -101,6 +103,8 @@ void die(  const char* format, ... );
 char	*ifname = NULL,
 		*ofname = NULL;
 bool patch11n = false,
+	 all_channels = false,
+	 show_regulatory = false,
 	 init_device = false;
 	 nodev = false,
 	 preserve_mac = false,
@@ -504,6 +508,136 @@ struct regulatory_item regulatory[] =
 	{ 0, 0}
 };
 
+struct regulatory_item regulatory_all[] =
+{
+/*
+	BAND 1
+*/
+	{ 0x08, 0x0f21, 1 },
+	{ 0x0A, 0x0f21, 2 },
+	{ 0x0C, 0x0f21, 3 },
+	{ 0x0E, 0x0f21, 4 },
+	{ 0x10, 0x0f21, 5 },
+	{ 0x12, 0x0f21, 6 },
+	{ 0x14, 0x0f21, 7 },
+	{ 0x16, 0x0f21, 8 },
+	{ 0x18, 0x0f21, 9 },
+	{ 0x1A, 0x0f21, 10 },
+	{ 0x1C, 0x0f21, 11 },
+	{ 0x1E, 0x0f21, 12 },
+	{ 0x20, 0x0f21, 13 },
+	{ 0x22, 0x0f21, 14 },
+
+/*
+	BAND 2
+*/
+	{ 0x26, 0x0fe1, 183 },
+	{ 0x28, 0x0fe1, 184 },
+	{ 0x2A, 0x0fe1, 185 },
+	{ 0x2C, 0x0fe1, 186 },
+	{ 0x2E, 0x0fe1, 187 },
+	{ 0x30, 0x0fe1, 188 },
+	{ 0x32, 0x0fe1, 189 },
+	{ 0x34, 0x0fe1, 192 },
+	{ 0x36, 0x0f31, 196 },
+	{ 0x38, 0x0f31, 7 },
+	{ 0x3A, 0x0f31, 8 },
+	{ 0x3C, 0x0f31, 11 },
+	{ 0x3E, 0x0f31, 12 },
+	{ 0x40, 0x0f31, 16 },
+
+
+/*
+	BAND 3
+*/
+	{ 0x42, 0x0e6f, 34 },
+	{ 0x44, 0x0f6f, 36 },
+	{ 0x46, 0x0f6f, 38 },
+	{ 0x48, 0x0f6f, 40 },
+	{ 0x4A, 0x0f6f, 42 },
+	{ 0x4C, 0x0f6f, 44 },
+	{ 0x4E, 0x0f6f, 46 },
+	{ 0x50, 0x0f6f, 48 },
+	{ 0x52, 0x0f6f, 52 },
+	{ 0x54, 0x0f6f, 56 },
+	{ 0x56, 0x0f6f, 60 },
+	{ 0x58, 0x0f6f, 64 },
+
+/*
+	BAND 4
+*/
+	{ 0x5C, 0x0fe1, 100 },
+	{ 0x5E, 0x0fe1, 104 },
+	{ 0x60, 0x0fe1, 108 },
+	{ 0x62, 0x0fe1, 112 },
+	{ 0x64, 0x0fe1, 116 },
+	{ 0x66, 0x0fe1, 120 },
+	{ 0x68, 0x0fe1, 124 },
+	{ 0x6A, 0x0fe1, 128 },
+	{ 0x6C, 0x0fe1, 132 },
+	{ 0x6E, 0x0fe1, 136 },
+	{ 0x70, 0x0fe1, 140 },
+
+/*
+	BAND 5
+*/
+	{ 0x74, 0x0fe1, 145 },
+	{ 0x76, 0x0fe1, 149 },
+	{ 0x78, 0x0fe1, 153 },
+	{ 0x7A, 0x0fe1, 157 },
+	{ 0x7C, 0x0fe1, 161 },
+	{ 0x7E, 0x0fe1, 165 },
+
+/*
+	BAND 6
+*/
+	{ 0x82, 0x0fe1, HT40 + 1 },
+	{ 0x84, 0x0fe1, HT40 + 2 },
+	{ 0x86, 0x0fe1, HT40 + 3 },
+	{ 0x88, 0x0fe1, HT40 + 4 },
+	{ 0x8A, 0x0fe1, HT40 + 5 },
+	{ 0x8C, 0x0fe1, HT40 + 6 },
+	{ 0x8E, 0x0fe1, HT40 + 7 },
+
+/*
+	BAND 7
+*/
+	{ 0x92, 0x0fe1, HT40 + 36 },
+	{ 0x94, 0x0fe1, HT40 + 44 },
+	{ 0x96, 0x0fe1, HT40 + 52 },
+	{ 0x98, 0x0fe1, HT40 + 60 },
+	{ 0x9A, 0x0fe1, HT40 + 100 },
+	{ 0x9C, 0x0fe1, HT40 + 108 },
+	{ 0x9E, 0x0fe1, HT40 + 116 },
+	{ 0x100, 0x0fe1, HT40 + 124 },
+	{ 0x102, 0x0fe1, HT40 + 132 },
+	{ 0x104, 0x0fe1, HT40 + 149 },
+	{ 0x106, 0x0fe1, HT40 + 157 },
+
+	{ 0, 0}
+};
+
+void eeprom_show_regulatory()
+{
+	uint16_t value;
+	unsigned int reg_offs;
+	int idx;
+
+	printf("Regulatory data from card EEPROM...\n");
+
+	eeprom_lock();	
+
+	reg_offs = 2 * eeprom_read16(0xCC);
+	printf("Regulatory base: %04x\n", reg_offs);
+
+	for (idx=0; regulatory_all[idx].addr; idx++) {
+		value = eeprom_read16(reg_offs + regulatory_all[idx].addr);
+		printf("Channel %d%s:\t%04x\n", regulatory_all[idx].chn & ~HT40, (regulatory_all[idx].chn & HT40) ? " (HT40)" : "", value);
+	}
+
+	eeprom_unlock();
+}
+
 void eeprom_patch11n()
 {
 	uint16_t value;
@@ -730,7 +864,7 @@ int main(int argc, char** argv)
 	getresuid(&ruid, &euid, &suid);
 
 	while (1) {
-		c = getopt_long(argc, argv, "rwld:mcni:o:bhpID:", long_options, NULL);
+		c = getopt_long(argc, argv, "rwld:mcni:o:bhpasID:", long_options, NULL);
 		if (c == -1)
 			break;
 		switch(c) {
@@ -767,6 +901,12 @@ int main(int argc, char** argv)
 			case 'p':
 				patch11n = true;
 				break;
+			case 'a':
+				all_channels = true;
+				break;
+			case 's':
+				show_regulatory = true;
+				break;
 			case 'I':
 				init_device = true;
 				break;
@@ -797,6 +937,10 @@ int main(int argc, char** argv)
 					"save dump in big-endian byteorder (default: little-endian)\n"
 					"\t-p | --patch11n\t\t\t\t"
 					"patch device eeprom to enable 802.11n\n"
+					"\t-a | --all-channels\t\t\t\t"
+					"patch device eeprom to enable all channels\n"
+					"\t-s | --show-regulatory\t\t\t\t"
+					"show regulatory eeprom data\n"
 					"\t-I | --init\t\t\t\t"
 					"init device (useful if driver didn't it)\n"
 					"\t-l | --list\t\t\t\t"
@@ -841,6 +985,9 @@ int main(int argc, char** argv)
 
 	init_card();
 
+	if (show_regulatory)
+		eeprom_show_regulatory();
+
 	if (ofname)
 		eeprom_read(ofname);
 
@@ -849,6 +996,9 @@ int main(int argc, char** argv)
 
 	if (patch11n && valid_ids[dev.idx].writable)
 		eeprom_patch11n();
+
+	if (all_channels)
+		; //todo
 
 	release_card();
 	return 0;
