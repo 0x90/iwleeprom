@@ -836,10 +836,10 @@ int main(int argc, char** argv)
 	if(!ifname && !ofname && !patch11n)
 		printf("No file names given or patch option selected!\nNo EEPROM actions will be performed, just write-enable test\n");
 
-	init_card();
-
 	if(init_device)
 		initpower();
+
+	init_card();
 
 	if (ofname)
 		eeprom_read(ofname);
