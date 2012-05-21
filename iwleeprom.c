@@ -81,58 +81,13 @@ struct pcidev dev;
 
 #define DEVICES_PATH "/sys/bus/pci/devices"
 
-const struct pci_id valid_ids[] = {
-/* Intel devices */
-	{ INTEL_PCI_VID,   0x0082, &dev_ops_iwl6k, "6000 Series Gen2"},
-	{ INTEL_PCI_VID,   0x0083, &dev_ops_iwl6k, "Centrino Wireless-N 1000"},
-	{ INTEL_PCI_VID,   0x0084, &dev_ops_iwl6k, "Centrino Wireless-N 1000"},
-	{ INTEL_PCI_VID,   0x0085, &dev_ops_iwl6k, "6000 Series Gen2"},
-	{ INTEL_PCI_VID,   0x0087, &dev_ops_iwl6k, "Centrino Advanced-N + WiMAX 6250"},
-	{ INTEL_PCI_VID,   0x0089, &dev_ops_iwl6k, "Centrino Advanced-N + WiMAX 6250"},
-	{ INTEL_PCI_VID,   0x0885, &dev_ops_iwl6k, "WiFi+WiMAX 6050 Series Gen2"},
-	{ INTEL_PCI_VID,   0x0886, &dev_ops_iwl6k, "WiFi+WiMAX 6050 Series Gen2"},
-	{ INTEL_PCI_VID,   0x4229, &dev_ops_iwl4965, "PRO/Wireless 4965 AG or AGN [Kedron] Network Connection"},
-	{ INTEL_PCI_VID,   0x422b, &dev_ops_iwl6k, "Centrino Ultimate-N 6300"},
-	{ INTEL_PCI_VID,   0x422c, &dev_ops_iwl6k, "Centrino Advanced-N 6200"},
-	{ INTEL_PCI_VID,   0x4230, &dev_ops_iwl4965, "PRO/Wireless 4965 AG or AGN [Kedron] Network Connection"},
-	{ INTEL_PCI_VID,   0x4232, &dev_ops_iwl5k, "WiFi Link 5100"},
-	{ INTEL_PCI_VID,   0x4235, &dev_ops_iwl5k, "Ultimate N WiFi Link 5300"},
-	{ INTEL_PCI_VID,   0x4236, &dev_ops_iwl5k, "Ultimate N WiFi Link 5300"},
-	{ INTEL_PCI_VID,   0x4237, &dev_ops_iwl5k, "PRO/Wireless 5100 AGN [Shiloh] Network Connection"},
-	{ INTEL_PCI_VID,   0x4238, &dev_ops_iwl6k, "Centrino Ultimate-N 6300"},
-	{ INTEL_PCI_VID,   0x4239, &dev_ops_iwl6k, "Centrino Advanced-N 6200"},
-	{ INTEL_PCI_VID,   0x423a, &dev_ops_iwl5k, "PRO/Wireless 5350 AGN [Echo Peak] Network Connection"},
-	{ INTEL_PCI_VID,   0x423b, &dev_ops_iwl5k, "PRO/Wireless 5350 AGN [Echo Peak] Network Connection"},
-	{ INTEL_PCI_VID,   0x423c, &dev_ops_iwl5k, "WiMAX/WiFi Link 5150"},
-	{ INTEL_PCI_VID,   0x423d, &dev_ops_iwl5k, "WiMAX/WiFi Link 5150"},
-
-/* Atheros 5k devices */
-	{ ATHEROS_PCI_VID, 0x0007, &dev_ops_ath5k, "AR5000 802.11a Wireless Adapter" },
-	{ ATHEROS_PCI_VID, 0x0011, &dev_ops_ath5k, "AR5210 802.11a NIC" },
-	{ ATHEROS_PCI_VID, 0x0012, &dev_ops_ath5k, "AR5211 802.11ab NIC" },
-	{ ATHEROS_PCI_VID, 0x0013, &dev_ops_ath5k, "Atheros AR5001X+ Wireless Network Adapter" },
-	{ ATHEROS_PCI_VID, 0x001a, &dev_ops_ath5k, "AR2413 802.11bg NIC" },
-	{ ATHEROS_PCI_VID, 0x001b, &dev_ops_ath5k, "AR5413 802.11abg NIC" },
-	{ ATHEROS_PCI_VID, 0x001c, &dev_ops_ath5k, "AR5001 Wireless Network Adapter" },
-	{ ATHEROS_PCI_VID, 0x001d, &dev_ops_ath5k, "AR5007G Wireless Network Adapter" },
-	{ ATHEROS_PCI_VID, 0x0020, &dev_ops_ath5k, "AR5513 802.11abg Wireless NIC" },
-	{ ATHEROS_PCI_VID, 0x0207, &dev_ops_ath5k, "AR5210 802.11abg" },
-	{ ATHEROS_PCI_VID, 0x1014, &dev_ops_ath5k, "AR5212 802.11abg" },
-
-/* Atheros 9k devices */
-	{ ATHEROS_PCI_VID, 0x0023, &dev_ops_ath9k, "AR5008 Wireless Adapter (PCI)" },
-	{ ATHEROS_PCI_VID, 0x0024, &dev_ops_ath9k, "AR5008 Wireless Adapter (PCI-E)" },
-	{ ATHEROS_PCI_VID, 0x0027, &dev_ops_ath9k, "AR9160 802.11abgn Wireless Adapter (PCI)" },
-	{ ATHEROS_PCI_VID, 0x0029, &dev_ops_ath9k, "AR922X Wireless Adapter (PCI)" },
-	{ ATHEROS_PCI_VID, 0x002A, &dev_ops_ath9k, "AR928X Wireless Adapter (PCI-E)" },
-	{ ATHEROS_PCI_VID, 0x002B, &dev_ops_ath9k, "AR9285 Wireless Adapter (PCI-E)" },
-	{ ATHEROS_PCI_VID, 0x002C, &dev_ops_ath9k, "AR2427 Wireless Adapter (PCI-E)" }, /* PCI-E 802.11n bonded out */
-	{ ATHEROS_PCI_VID, 0x002D, &dev_ops_ath9k, "AR9287 Wireless Adapter (PCI)" },
-	{ ATHEROS_PCI_VID, 0x002E, &dev_ops_ath9k, "AR9287 Wireless Adapter (PCI-E)" },
-	{ ATHEROS_PCI_VID, 0x0030, &dev_ops_ath9k, "AR9300 Wireless Adapter (PCI-E)" },
-//	{ ATHEROS_PCI_VID, 0x0033, &dev_ops_ath9k, "11a/b/g/n Wireless LAN Mini-PCI Express Adapter" },
-
-	{ 0, 0, NULL, "" }
+const io_driverp iodrivers[] = {
+	&io_iwl4965,
+	&io_iwl5k,
+	&io_iwl6k,
+	&io_ath5k,
+	&io_ath9k,
+	NULL
 };
 
 void init_card()
@@ -168,13 +123,13 @@ void init_dump(struct pcidev *dev, char *filename)
 	seteuid(suid);
 
 	printf("Dump file: '%s' (read %u bytes)\n", filename, eeprom_size);
-	if(eeprom_size <dev_ops_iwl4965.eeprom_size)
+	if(eeprom_size < io_iwl4965.eeprom_size)
 		die("Too small file!\n");
 
-	if(eeprom_size == dev_ops_iwl4965.eeprom_size)
-		dev->ops = &dev_ops_iwl4965;	
+	if(eeprom_size == io_iwl4965.eeprom_size)
+		dev->ops = &io_iwl4965;	
 	else
-		dev->ops = &dev_ops_iwl5k;
+		dev->ops = &io_iwl5k;
 
 	if ( dev->ops->eeprom_signature == le2cpu16(buf[0])) {
 		dump_order = order_le;
@@ -260,6 +215,7 @@ void eeprom_write(char *filename)
 	uint16_t evalue;
 	size_t   size;
 	FILE *fd;
+	char c;
 
 	seteuid(ruid);
 	if (!(fd = fopen(filename, "rb")))
@@ -267,6 +223,10 @@ void eeprom_write(char *filename)
 	size = 2 * fread(buf, 2, dev.ops->eeprom_size/2, fd);
 	fclose(fd);
 	seteuid(suid);
+
+	printf("About to write device EEPROM, press 'Y' if you are sure... ");
+	scanf("\n%c", &c);
+	if ('Y' != c) return;
 
 	printf("Writing data to EEPROM...\n  '.' = match, 'x' = write\n");
 	for(addr=0; addr<size;addr+=2)
@@ -328,7 +288,7 @@ unsigned int read_id(const char *device, const char* param)
 
 void check_device(struct pcidev *id)
 {
-	int i;
+	int d,i;
 
 	id->idx = -1;
 	id->class = (read_id(id->device,"class") >> 8);
@@ -340,24 +300,33 @@ void check_device(struct pcidev *id)
 	id->sven  = read_id(id->device,"subsystem_vendor");
 	id->sdev  = read_id(id->device,"subsystem_device");
 
-	for(i=0; id->idx<0 && valid_ids[i].ven; i++)
-		if(id->ven==valid_ids[i].ven && id->dev==valid_ids[i].dev) {
-			id->idx = i;
-			id->ops = valid_ids[i].ops;
-		}
+// look for IO driver for this device
+
+	for(d=0; iodrivers[d]; d++) {
+		for(i=0; id->idx<0 && iodrivers[d]->valid_ids[i].ven; i++)
+			if(id->ven==iodrivers[d]->valid_ids[i].ven && id->dev==iodrivers[d]->valid_ids[i].dev) {
+				id->idx = i;
+				id->ops = iodrivers[d];
+			}
+	}
 }
 
 void list_supported()
 {
-	int i;
+	int d,i;
 	printf("Known devices:\n");
-	for(i=0; valid_ids[i].ven; i++)
-		printf("  %04x:%04x [%s, %s] %s \n", 
-			valid_ids[i].ven,
-			valid_ids[i].dev,
-			valid_ids[i].ops->eeprom_writable ? "RW" : "RO",
-			valid_ids[i].ops->name,
-			valid_ids[i].name);
+
+	for(d=0; iodrivers[d]; d++) {
+		printf("\n-> IO driver: %s, %s\n",
+				iodrivers[d]->name,
+				iodrivers[d]->eeprom_writable ? "RW" : "RO");
+
+		for(i=0; iodrivers[d]->valid_ids[i].ven; i++)
+			printf("  [%04x:%04x]  %s\n",
+				iodrivers[d]->valid_ids[i].ven,
+				iodrivers[d]->valid_ids[i].dev,
+				iodrivers[d]->valid_ids[i].name);
+	}
 }
 
 void map_device()
@@ -412,9 +381,9 @@ void search_card()
 				printf("\n");
 			else
 				printf(" [%s, %s] %s \n", 
-					valid_ids[id.idx].ops->eeprom_writable ? "RW" : "RO",
-					valid_ids[id.idx].ops->name,
-					valid_ids[id.idx].name);
+					id.ops->eeprom_writable ? "RW" : "RO",
+					id.ops->name,
+					id.ops->valid_ids[id.idx].name);
 		}
 		if (id.idx >=0 ) {
 			if(!cnt)
@@ -426,6 +395,7 @@ void search_card()
 			ids[cnt].ven = id.ven; ids[cnt].sven = id.sven;
 			ids[cnt].dev = id.dev; ids[cnt].sdev = id.sdev;
 			ids[cnt].idx = id.idx;
+			ids[cnt].ops = id.ops;
 			memcpy(ids[cnt].device, id.device, 256);
 			cnt++;
 		}
@@ -437,8 +407,8 @@ void search_card()
 	for (i=0; i<cnt; i++) {
 		printf("  [%d] %s [%s] %s (%04x:%04x, %04x:%04x)\n", i+1,
 			ids[i].device,
-			valid_ids[ids[i].idx].ops->eeprom_writable ? "RW" : "RO",
-			valid_ids[ids[i].idx].name,
+			ids[i].ops->eeprom_writable ? "RW" : "RO",
+			ids[i].ops->valid_ids[ids[i].idx].name,
 			ids[i].ven,  ids[i].dev,
 			ids[i].sven, ids[i].sdev);
 	}
@@ -571,7 +541,7 @@ int main(int argc, char** argv)
 	printf("Using device %s [%s] %s \n",
 		dev.device,
 		dev.ops->eeprom_writable ? "RW" : "RO",
-		valid_ids[dev.idx].name);
+		dev.ops->valid_ids[dev.idx].name);
 	printf("IO driver: %s\n",
 		dev.ops->name);
 
@@ -582,7 +552,6 @@ int main(int argc, char** argv)
 			dev.ops->eeprom_parse ? " parse" : "",
 			dev.ops->eeprom_patch11n ? " patch11n" : ""
 		);
-
 
 	map_device();
 
@@ -595,10 +564,10 @@ int main(int argc, char** argv)
 	if(!ifname && !ofname && !patch11n && !parse)
 		printf("No file names given nor actions selected!\nNo EEPROM actions will be performed, just write-enable test\n");
 
-	init_card();
-
 	if (init_device && dev.ops->init_device && !dev.ops->init_device(&dev))
 		die("Device init failed!\n");
+
+	init_card();
 
 	if (dev.ops->eeprom_check)
 		dev.ops->eeprom_check(&dev);

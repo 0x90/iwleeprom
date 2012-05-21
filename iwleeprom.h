@@ -59,7 +59,7 @@ struct pcidev
 	int 			idx;
 	char			*device;
 
-	struct dev_ops	*ops;
+	struct io_driver *ops;
 	unsigned char   *mem;
 	bool 			eeprom_locked;
 };
@@ -67,7 +67,6 @@ struct pcidev
 struct pci_id
 {
 	unsigned int	ven, dev;
-	struct dev_ops	*ops;
 	char name[64];
 };
 
@@ -87,8 +86,9 @@ extern bool preserve_calib;
 extern bool buf_read16(unsigned int addr, uint16_t *value);
 extern bool buf_write16(unsigned int addr, uint16_t value);
 
-struct dev_ops {
-	const char*		  name;
+struct io_driver {
+	const char		  *name;
+	const struct pci_id *valid_ids;
 	uint32_t		  mmap_size;
 	uint32_t		  eeprom_size;
 	uint16_t		  eeprom_signature;
@@ -104,6 +104,8 @@ struct dev_ops {
 	void (*eeprom_patch11n)(struct pcidev *dev);
 	void (*eeprom_parse)(struct pcidev *dev);
 };
+
+typedef struct io_driver *io_driverp; 
 
 #endif
 

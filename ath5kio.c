@@ -65,6 +65,24 @@
 #define AR5211_EEPROM_STAT_WRDONE 0x0004
 #define AR5211_EEPROM_CONF 0x6010
 
+/* Atheros 5k devices */
+const struct pci_id ath5k_ids[] = {
+	{ ATHEROS_PCI_VID, 0x0007, "AR5000 802.11a Wireless Adapter" },
+	{ ATHEROS_PCI_VID, 0x0011, "AR5210 802.11a NIC" },
+	{ ATHEROS_PCI_VID, 0x0012, "AR5211 802.11ab NIC" },
+	{ ATHEROS_PCI_VID, 0x0013, "Atheros AR5001X+ Wireless Network Adapter" },
+	{ ATHEROS_PCI_VID, 0x001a, "AR2413 802.11bg NIC" },
+	{ ATHEROS_PCI_VID, 0x001b, "AR5413 802.11abg NIC" },
+	{ ATHEROS_PCI_VID, 0x001c, "AR5001 Wireless Network Adapter" },
+	{ ATHEROS_PCI_VID, 0x001d, "AR5007G Wireless Network Adapter" },
+	{ ATHEROS_PCI_VID, 0x0020, "AR5513 802.11abg Wireless NIC" },
+	{ ATHEROS_PCI_VID, 0x0207, "AR5210 802.11abg" },
+	{ ATHEROS_PCI_VID, 0x1014, "AR5212 802.11abg" },
+
+	{ 0, 0, "" }
+};
+
+
 static bool ath5k_eeprom_lock(struct pcidev *dev) { return true; }
 
 static bool ath5k_eeprom_release(struct pcidev *dev) { return true; }
@@ -176,8 +194,9 @@ static bool ath5k_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t val
 	return true;
 }
 
-struct dev_ops dev_ops_ath5k = {
+struct io_driver io_ath5k = {
 	.name			 = "ath5k",
+	.valid_ids		  = (struct pci_id*) &ath5k_ids,
 	.mmap_size        = ATH5K_MMAP_LENGTH,
 	.eeprom_size      = ATH5K_EEPROM_SIZE,
 	.eeprom_signature = ATH5K_EEPROM_SIGNATURE,
