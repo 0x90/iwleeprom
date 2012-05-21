@@ -26,9 +26,9 @@
 
 #define INTEL_PCI_VID       0x8086
 
-extern struct dev_ops dev_ops_iwl4965;
-extern struct dev_ops dev_ops_iwl5k;
-extern struct dev_ops dev_ops_iwl6k;
+extern struct io_driver io_iwl4965;
+extern struct io_driver io_iwl5k;
+extern struct io_driver io_iwl6k;
 
 #endif
 

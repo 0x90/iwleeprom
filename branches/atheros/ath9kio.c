@@ -105,6 +105,25 @@
 #define AR_EEPROM_STATUS_DATA_PROT_ACCESS        0x00040000
 #define AR_EEPROM_STATUS_DATA_ABSENT_ACCESS      0x00080000
 
+
+/* Atheros 9k devices */
+const struct pci_id ath9k_ids[] = {
+	{ ATHEROS_PCI_VID, 0x0023, "AR5008 Wireless Adapter (PCI)" },
+	{ ATHEROS_PCI_VID, 0x0024, "AR5008 Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x0027, "AR9160 802.11abgn Wireless Adapter (PCI)" },
+	{ ATHEROS_PCI_VID, 0x0029, "AR922X Wireless Adapter (PCI)" },
+	{ ATHEROS_PCI_VID, 0x002A, "AR928X Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x002B, "AR9285 Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x002C, "AR2427 Wireless Adapter (PCI-E)" }, /* PCI-E 802.11n bonded out */
+	{ ATHEROS_PCI_VID, 0x002D, "AR9287 Wireless Adapter (PCI)" },
+	{ ATHEROS_PCI_VID, 0x002E, "AR9287 Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x0030, "AR9300 Wireless Adapter (PCI-E)" },
+//	{ ATHEROS_PCI_VID, 0x0033, "11a/b/g/n Wireless LAN Mini-PCI Express Adapter" },
+
+	{ 0, 0, "" }
+};
+
+
 static struct {
 	uint32_t version;
 	const char * name;
@@ -441,8 +460,9 @@ static void ath9k_eeprom_parse(struct pcidev *dev)
 		printf("error calculating CRC!\n");
 }
 
-struct dev_ops dev_ops_ath9k = {
+struct io_driver io_ath9k = {
 	.name			 = "ath9k",
+	.valid_ids		  = (struct pci_id*) &ath9k_ids,
 	.mmap_size        = ATH9K_MMAP_LENGTH,
 	.eeprom_size	  = ATH9K_EEPROM_SIZE,
 	.eeprom_signature = ATH9K_EEPROM_SIGNATURE,
