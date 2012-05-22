@@ -30,6 +30,7 @@
 #define ATH9K_EEPROM_SIGNATURE      0xA55A
 #define ATH9K_MMAP_LENGTH          0x10000
 
+#define AR9300_EEPROM_SIZE			0x4000
 
 #define AR5416_EEPROM_S             2
 #define AR5416_EEPROM_OFFSET        0x2000
@@ -117,6 +118,11 @@ const struct pci_id ath9k_ids[] = {
 	{ ATHEROS_PCI_VID, 0x002C, "AR2427 Wireless Adapter (PCI-E)" }, /* PCI-E 802.11n bonded out */
 	{ ATHEROS_PCI_VID, 0x002D, "AR9287 Wireless Adapter (PCI)" },
 	{ ATHEROS_PCI_VID, 0x002E, "AR9287 Wireless Adapter (PCI-E)" },
+	{ 0, 0, "" }
+};
+
+/* AR9300 devices */
+const struct pci_id ath9300_ids[] = {
 	{ ATHEROS_PCI_VID, 0x0030, "AR9300 Wireless Adapter (PCI-E)" },
 //	{ ATHEROS_PCI_VID, 0x0033, "11a/b/g/n Wireless LAN Mini-PCI Express Adapter" },
 
@@ -461,10 +467,28 @@ static void ath9k_eeprom_parse(struct pcidev *dev)
 }
 
 struct io_driver io_ath9k = {
-	.name			 = "ath9k",
-	.valid_ids		  = (struct pci_id*) &ath9k_ids,
+	.name             = "ath9k",
+	.valid_ids        = (struct pci_id*) &ath9k_ids,
 	.mmap_size        = ATH9K_MMAP_LENGTH,
 	.eeprom_size	  = ATH9K_EEPROM_SIZE,
+	.eeprom_signature = ATH9K_EEPROM_SIGNATURE,
+	.eeprom_writable  = true,
+
+	.init_device	 = NULL,
+	.eeprom_check    = NULL,
+	.eeprom_lock     = &ath9k_eeprom_lock,
+	.eeprom_release  = &ath9k_eeprom_release,
+	.eeprom_read16   = &ath9k_eeprom_read16,
+	.eeprom_write16  = &ath9k_eeprom_write16_short,
+	.eeprom_patch11n = &ath9k_eeprom_patch11n,
+	.eeprom_parse    = &ath9k_eeprom_parse
+};
+
+struct io_driver io_ath9300 = {
+	.name             = "ath9300",
+	.valid_ids        = (struct pci_id*) &ath9300_ids,
+	.mmap_size        = ATH9K_MMAP_LENGTH,
+	.eeprom_size	  = AR9300_EEPROM_SIZE,
 	.eeprom_signature = ATH9K_EEPROM_SIGNATURE,
 	.eeprom_writable  = true,
 
