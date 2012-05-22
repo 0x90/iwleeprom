@@ -24,6 +24,7 @@
 #define ATHEROS_PCI_VID 0x168c
 
 extern struct io_driver io_ath9k;
+extern struct io_driver io_ath9300;
 
 #endif
 

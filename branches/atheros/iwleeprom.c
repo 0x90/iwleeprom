@@ -87,6 +87,7 @@ const io_driverp iodrivers[] = {
 	&io_iwl6k,
 	&io_ath5k,
 	&io_ath9k,
+	&io_ath9300,
 	NULL
 };
 
