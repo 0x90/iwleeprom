@@ -53,6 +53,11 @@
 #define AR_SREV_VERSION_9271        0x140
 #define AR_SREV_VERSION_9300        0x1c0
 #define AR_SREV_REVISION_9300_20    2 /* 2.0 and 2.1 */
+#define AR_SREV_VERSION_9330        0x200
+#define AR_SREV_VERSION_9485        0x240
+#define AR_SREV_VERSION_9340        0x300
+#define AR_SREV_VERSION_9580        0x1c0
+#define AR_SREV_VERSION_9462        0x280
 
 #define AR_RADIO_SREV_MAJOR         0xf0
 #define AR_RAD5133_SREV_MAJOR       0x30
@@ -109,8 +114,8 @@
 
 /* Atheros 9k devices */
 const struct pci_id ath9k_ids[] = {
-	{ ATHEROS_PCI_VID, 0x0023, "AR5008 Wireless Adapter (PCI)" },
-	{ ATHEROS_PCI_VID, 0x0024, "AR5008 Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x0023, "AR5416 (AR5008 family) Wireless Adapter (PCI)" },
+	{ ATHEROS_PCI_VID, 0x0024, "AR5416 (AR5008 family) Wireless Adapter (PCI-E)" },
 	{ ATHEROS_PCI_VID, 0x0027, "AR9160 802.11abgn Wireless Adapter (PCI)" },
 	{ ATHEROS_PCI_VID, 0x0029, "AR922X Wireless Adapter (PCI)" },
 	{ ATHEROS_PCI_VID, 0x002A, "AR928X Wireless Adapter (PCI-E)" },
@@ -124,11 +129,12 @@ const struct pci_id ath9k_ids[] = {
 /* AR9300 devices */
 const struct pci_id ath9300_ids[] = {
 	{ ATHEROS_PCI_VID, 0x0030, "AR9300 Wireless Adapter (PCI-E)" },
-//	{ ATHEROS_PCI_VID, 0x0033, "11a/b/g/n Wireless LAN Mini-PCI Express Adapter" },
-
+	{ ATHEROS_PCI_VID, 0x0031, "AR9340 Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x0032, "AR9485 Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x0033, "AR9580 Wireless Adapter (PCI-E)" },
+	{ ATHEROS_PCI_VID, 0x0034, "AR9462 Wireless Adapter (PCI-E)" },
 	{ 0, 0, "" }
 };
-
 
 static struct {
 	uint32_t version;
@@ -145,6 +151,10 @@ static struct {
 	{ AR_SREV_VERSION_9287,      "9287" },
 	{ AR_SREV_VERSION_9271,      "9271" },
 	{ AR_SREV_VERSION_9300,      "9300" },
+	{ AR_SREV_VERSION_9330,      "9330" },
+	{ AR_SREV_VERSION_9485,      "9485" },
+	{ AR_SREV_VERSION_9340,      "9340" },
+	{ AR_SREV_VERSION_9462,      "9462" },
 	{ 0, ""}
 };
 
