@@ -91,8 +91,6 @@ static bool ath5k_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *val
 {
 	int timeout = 10000 ;
  	unsigned long int status ;
-	if (!dev->mem)
-		return buf_read16(addr, value);
 
  	PCI_OUT32(AR5211_EEPROM_CONF, 0),
  	usleep( 5 ) ;
@@ -132,9 +130,6 @@ static bool ath5k_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t val
  	unsigned long int pcicfg ;
  	int i ;
  	unsigned short int sdata ;
-
-	if (!dev->mem)
-		return buf_write16(addr, value);
 
  	/** enable eeprom access */
  	pcicfg = PCI_IN32( AR5K_PCICFG ) ;
@@ -209,6 +204,7 @@ struct io_driver io_ath5k = {
 	.eeprom_read16   = &ath5k_eeprom_read16,
 	.eeprom_write16  = &ath5k_eeprom_write16,
 	.eeprom_patch11n = NULL,
-	.eeprom_parse    = NULL
+	.eeprom_parse    = NULL,
+	.pdata			 = NULL
 };
 

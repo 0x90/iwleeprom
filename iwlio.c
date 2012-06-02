@@ -262,8 +262,6 @@ static bool iwl_eeprom_release(struct pcidev *dev)
 static bool iwl_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *value)
 {
 	unsigned int data = 0x0000FFFC & (addr << 1);
-	if (!dev->mem)
-		return buf_read16(addr, value);
 
 	PCI_OUT32(CSR_EEPROM_REG, data);
 	usleep(50);
@@ -279,9 +277,6 @@ static bool iwl_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *value
 
 static bool iwl_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t value)
 {
-	if (!dev->mem)
-		return buf_write16(addr, value);
-
 	uint32_t data = value;
 
 	if (preserve_mac && ((addr>=0x2A && addr<0x30) || (addr>=0x92 && addr<0x97)))
@@ -554,7 +549,8 @@ struct io_driver io_iwl4965 = {
 	.eeprom_read16   = &iwl_eeprom_read16,
 	.eeprom_write16  = &iwl_eeprom_write16,
 	.eeprom_patch11n = &iwl_eeprom_patch11n,
-	.eeprom_parse    = &iwl_eeprom_parse
+	.eeprom_parse    = &iwl_eeprom_parse,
+	.pdata			 = NULL
 };
 
 struct io_driver io_iwl5k = {
@@ -572,7 +568,8 @@ struct io_driver io_iwl5k = {
 	.eeprom_read16   = &iwl_eeprom_read16,
 	.eeprom_write16  = &iwl_eeprom_write16,
 	.eeprom_patch11n = &iwl_eeprom_patch11n,
-	.eeprom_parse    = &iwl_eeprom_parse
+	.eeprom_parse    = &iwl_eeprom_parse,
+	.pdata			 = NULL
 };
 
 struct io_driver io_iwl6k = {
@@ -581,7 +578,7 @@ struct io_driver io_iwl6k = {
 	.mmap_size        = IWL_MMAP_LENGTH,
 	.eeprom_size      = IWL_EEPROM_SIZE_5K,
 	.eeprom_signature = IWL_EEPROM_SIGNATURE,
-	.eeprom_writable  = false,
+	.eeprom_writable  = true,
 
 	.init_device     = &iwl_init_device,
 	.eeprom_check    = &iwl6k_eeprom_check,
@@ -590,6 +587,7 @@ struct io_driver io_iwl6k = {
 	.eeprom_read16   = &iwl_eeprom_read16,
 	.eeprom_write16  = &iwl_eeprom_write16,
 	.eeprom_patch11n = &iwl_eeprom_patch11n,
-	.eeprom_parse    = &iwl_eeprom_parse
+	.eeprom_parse    = &iwl_eeprom_parse,
+	.pdata			 = NULL
 };
 
