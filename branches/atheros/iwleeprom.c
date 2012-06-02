@@ -50,8 +50,10 @@ static struct option long_options[] = {
 	{"bigendian", 0, NULL, 'b'},
 	{"help",      0, NULL, 'h'},
 	{"list",      0, NULL, 'l'},
+	{"drivers",   0, NULL, 'L'},
+	{"driver",    1, NULL, 'F'},
 	{"debug",     1, NULL, 'D'},
-	{"parse",     0, NULL, 'P'},
+	{"show",      0, NULL, 's'},
 	{"init",      0, NULL, 'I'},
 	{"patch11n",  0, NULL, 'p'}
 };
@@ -115,6 +117,7 @@ void init_dump(struct pcidev *dev, char *filename)
 {
 	FILE *fd;
 	uint32_t eeprom_size;
+	int d;
 
 	seteuid(ruid);
 	if (!(fd = fopen(filename, "rb")))
@@ -122,7 +125,7 @@ void init_dump(struct pcidev *dev, char *filename)
 	eeprom_size = 2 * fread(buf, 2, EEPROM_SIZE_MAX/2, fd);
 	fclose(fd);
 	seteuid(suid);
-
+/*
 	printf("Dump file: '%s' (read %u bytes)\n", filename, eeprom_size);
 	if(eeprom_size < io_iwl4965.eeprom_size)
 		die("Too small file!\n");
@@ -131,7 +134,31 @@ void init_dump(struct pcidev *dev, char *filename)
 		dev->ops = &io_iwl4965;	
 	else
 		dev->ops = &io_iwl5k;
+*/
+	for(d=0; !dev->ops && iodrivers[d]; d++) {
+		if (dev->forced_driver) {
+			if(!strcmp(dev->forced_driver, iodrivers[d]->name)) {
+				dev->ops = iodrivers[d];
+			}
+		} else {
+			if ( iodrivers[d]->eeprom_signature == le2cpu16(buf[0])) {
+				dump_order = order_le;
+				dev->ops = iodrivers[d];
+			} else if ( iodrivers[d]->eeprom_signature == be2cpu16(buf[0])) {
+				dump_order = order_be;
+				dev->ops = iodrivers[d];
+			}
+		}
+	}
 
+	if (!dev->ops)
+		die("No usable IO driver found for this dump!\n");
+
+	printf(" Using IO driver%s: %s\n", dev->forced_driver ? " (forced)":"" ,dev->ops->name);
+	dev->ops->eeprom_read16  = &buf_read16;
+	dev->ops->eeprom_write16 = &buf_write16;
+
+/*
 	if ( dev->ops->eeprom_signature == le2cpu16(buf[0])) {
 		dump_order = order_le;
 	} else if ( dev->ops->eeprom_signature == be2cpu16(buf[0])) {
@@ -139,6 +166,7 @@ void init_dump(struct pcidev *dev, char *filename)
 	} else {
 		die("Invalid EEPROM signature!\n");
 	}
+*/
 	printf("  byte order: %s ENDIAN\n", (dump_order == order_le) ? "LITTLE":"BIG");
 }
 
@@ -156,7 +184,7 @@ void fixate_dump(struct pcidev *dev, char *filename)
 	seteuid(suid);
 }
 
-bool buf_read16(uint32_t addr, uint16_t *value)
+bool buf_read16(struct pcidev* dev, uint32_t addr, uint16_t *value)
 {
 	if (addr >= EEPROM_SIZE_MAX) return 0;
 	if (dump_order == order_le)
@@ -166,7 +194,7 @@ bool buf_read16(uint32_t addr, uint16_t *value)
 	return true;
 }
 
-bool buf_write16(uint32_t addr, uint16_t value)
+bool buf_write16(struct pcidev* dev, uint32_t addr, uint16_t value)
 {
 	if (addr >= EEPROM_SIZE_MAX) return false;
 	if (dump_order == order_le)
@@ -312,21 +340,24 @@ void check_device(struct pcidev *id)
 	}
 }
 
-void list_supported()
+void list_supported(bool show_devices)
 {
 	int d,i;
-	printf("Known devices:\n");
+	printf("Available IO drivers:\n");
 
 	for(d=0; iodrivers[d]; d++) {
-		printf("\n-> IO driver: %s, %s\n",
+		printf("-> IO driver: %s, %s\n",
 				iodrivers[d]->name,
 				iodrivers[d]->eeprom_writable ? "RW" : "RO");
 
-		for(i=0; iodrivers[d]->valid_ids[i].ven; i++)
-			printf("  [%04x:%04x]  %s\n",
-				iodrivers[d]->valid_ids[i].ven,
-				iodrivers[d]->valid_ids[i].dev,
-				iodrivers[d]->valid_ids[i].name);
+		if (show_devices) {
+			for(i=0; iodrivers[d]->valid_ids[i].ven; i++)
+				printf("  [%04x:%04x]  %s\n",
+					iodrivers[d]->valid_ids[i].ven,
+					iodrivers[d]->valid_ids[i].dev,
+					iodrivers[d]->valid_ids[i].name);
+			printf("\n");
+		}
 	}
 }
 
@@ -438,17 +469,26 @@ int main(int argc, char** argv)
 	char c;
 	dev.device = NULL;
 	dev.mem    = NULL;
+	dev.ops    = NULL;
+	dev.forced_driver = NULL;
 	dump_order = order_le;
 	getresuid(&ruid, &euid, &suid);
 
 	while (1) {
-		c = getopt_long(argc, argv, "rwld:mcni:o:bhpPID:", long_options, NULL);
+		c = getopt_long(argc, argv, "rwlLF:d:mcni:o:bhpsID:", long_options, NULL);
 		if (c == -1)
 			break;
 		switch(c) {
 			case 'l':
-				list_supported();
+				list_supported(true);
 				exit(0);
+			case 'L':
+				list_supported(false);
+				exit(0);
+			case 'F':
+				printf("Forced driver name: %s\n", optarg);
+				dev.forced_driver = optarg;
+				break;
 			case 'd':
 				dev.device = optarg;
 				break;
@@ -476,7 +516,7 @@ int main(int argc, char** argv)
 			case 'b':
 				dump_order = order_be;
 				break;
-			case 'P':
+			case 's':
 				parse = true;
 				break;
 			case 'p':
@@ -516,10 +556,14 @@ int main(int argc, char** argv)
 					"patch device eeprom to enable 802.11n\n"
 					"\t-I | --init\t\t\t\t"
 					"init device (useful if driver didn't it)\n"
-					"\t-P | --parse\t\t\t\t"
-					"parse eeprom (show available modes/channels)\n"
+					"\t-s | --show\t\t\t\t"
+					"show available modes/channels\n"
 					"\t-l | --list\t\t\t\t"
 					"list known cards\n"
+					"\t-L | --drivers\t\t\t\t"
+					"list available IO drivers\n"
+					"\t-F | --driver <driver_name>\t\t"
+					"force using specified IO driver (nodev mode only)\n"
 					"\t-D <level> | --debug <level>\t\t"
 					"set debug level (0-1, default 0)\n"
 					"\t-h | --help\t\t\t\t"
@@ -603,13 +647,16 @@ _nodev:
 	if (dev.device)
 		die("Don't use '-d' and '-n' options simultaneously\n");
 
-	printf("Device-less operation... (iwl ONLY)\n");
+	printf("Device-less operation...\n");
 
 	if (!ifname)
 		die("No input file given!\n");
 	if (patch11n && !ofname)
 		die("Have to specify output file for 802.11n patch!\n");
 	init_dump(&dev, ifname);
+
+	if (dev.ops->eeprom_check)
+		dev.ops->eeprom_check(&dev);
 
 	if (parse && dev.ops && dev.ops->eeprom_parse)
 		dev.ops->eeprom_parse(&dev);

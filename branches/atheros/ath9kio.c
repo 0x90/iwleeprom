@@ -29,8 +29,10 @@
 #define ATH9K_EEPROM_SIZE           0x1000
 #define ATH9K_EEPROM_SIGNATURE      0xA55A
 #define ATH9K_MMAP_LENGTH          0x10000
+#define ATH9300_MMAP_LENGTH        0x20000
 
-#define AR9300_EEPROM_SIZE			0x4000
+#define ATH9300_EEPROM_SIZE			0x4000
+#define EEPROM_DATA_LEN_9485		1088
 
 #define AR5416_EEPROM_S             2
 #define AR5416_EEPROM_OFFSET        0x2000
@@ -77,6 +79,8 @@
 	((macVer > AR_SREV_VERSION_9300) || \
 	 ((macVer == AR_SREV_VERSION_9300) && \
 	  (macRev >= AR_SREV_REVISION_9300_20)))
+#define AR_SREV_9485 \
+	(macVer == AR_SREV_VERSION_9485)
 
 #define AR_SREV                     ((AR_SREV_9100) ? 0x0600 : 0x4020)
 #define AR_SREV_ID                  ((AR_SREV_9100) ? 0x00000FFF : 0x000000FF)
@@ -111,6 +115,17 @@
 #define AR_EEPROM_STATUS_DATA_PROT_ACCESS        0x00040000
 #define AR_EEPROM_STATUS_DATA_ABSENT_ACCESS      0x00080000
 
+#define AR9300_BASE_ADDR_4K		0xfff
+#define AR9300_BASE_ADDR		0x3ff
+#define AR9300_BASE_ADDR_512	0x1ff
+
+#define AR9300_OTP_BASE			0x14000
+#define AR9300_OTP_STATUS		0x15f18
+#define AR9300_OTP_STATUS_TYPE		0x7
+#define AR9300_OTP_STATUS_VALID		0x4
+#define AR9300_OTP_STATUS_ACCESS_BUSY	0x2
+#define AR9300_OTP_STATUS_SM_BUSY	0x1
+#define AR9300_OTP_READ_DATA		0x15f1c
 
 /* Atheros 9k devices */
 const struct pci_id ath9k_ids[] = {
@@ -198,8 +213,8 @@ uint16_t macVer,
 		 rfRev;
 bool	 isPCIE;
 
-static bool ath9k_eeprom_read16(struct pcidev *dev, unsigned int addr, uint16_t *value);
-static bool ath9k_eeprom_write16(struct pcidev *dev, unsigned int addr, uint16_t value);
+static bool ath9k_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *value);
+static bool ath9k_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t value);
 
 static void ath9k_get_hw_version(struct pcidev *dev)
 {
@@ -240,7 +255,6 @@ static void ath9k_get_rf_version(struct pcidev *dev)
 // ************************************
 
 static bool ath9k_eeprom_lock(struct pcidev *dev) {
-	uint16_t data;
 // reading HW version, some register addresses depends on it
 	ath9k_get_hw_version(dev);
 	printf("HW: AR%s (PCI%s) rev %04x\n", ath9k_hw_name(macVer), isPCIE ? "-E" : "", macRev);
@@ -250,33 +264,6 @@ static bool ath9k_eeprom_lock(struct pcidev *dev) {
 		ath9k_get_rf_version(dev);
 		printf("RF: AR%s\n", ath9k_rf_name(rfVer & AR_RADIO_SREV_MAJOR));
 	}
-
-// reading EEPROM size and setting it's base address
-// thanks to Inv from forum.ixbt.com
-	if (ath9k_eeprom_read16(dev, 128, &data) && (376 == data)) {
-		short_eeprom_base = 128;
-		short_eeprom_size = 376;
-		goto ssize_ok;
-	}
-	if (ath9k_eeprom_read16(dev, 512, &data) && (3256 == data)) {
-		short_eeprom_base =  512;
-		short_eeprom_size = 3256;
-		goto ssize_ok;
-	}
-	if (ath9k_eeprom_read16(dev, 256, &data) && (727 == data)) {
-		short_eeprom_base = 256;
-		short_eeprom_size = 727;
-		goto ssize_ok;
-	}
-
-	short_eeprom_base = 0;
-	short_eeprom_size = 0;
-	printf("Can't get ath9k eeprom size!\n");
-//	return false;
-ssize_ok:
-	printf("ath9k short eeprom base: %d  size: %d\n",
-		short_eeprom_base,
-		short_eeprom_size);
 	return true;
 }
 
@@ -290,7 +277,7 @@ static bool ath9k_eeprom_crc_calc(struct pcidev *dev, uint16_t *crcp)
 
 	for (i=0; i<short_eeprom_size; i+=2) {
 		if (2 == i) continue;
-		if (!ath9k_eeprom_read16(dev, short_eeprom_base + i, &data))
+		if (!dev->ops->eeprom_read16(dev, short_eeprom_base + i, &data))
 			return false;
 		crc ^= data;
 	}
@@ -337,6 +324,155 @@ static bool ath9k_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *val
 	}
 	printf("timeout reading ath9k eeprom at %04x!\n", addr);
 	return false;
+}
+
+static bool ath9300_otp_read32(struct pcidev *dev, uint32_t addr, uint32_t *value)
+{
+	int32_t data;
+	int i;
+	data = PCI_IN32(AR9300_OTP_BASE + (addr & 0x1FF0));
+	for(i = WAIT_TIMEOUT; i; i--) {
+		usleep(10);
+		data = PCI_IN32(AR9300_OTP_STATUS);
+		if (AR9300_OTP_STATUS_VALID == (data & AR9300_OTP_STATUS_TYPE)) {
+			*value = PCI_IN32(AR9300_OTP_READ_DATA);
+			return true;
+		}
+	}
+	printf("timeout reading ath9300 OTP at %04x!\n", addr);
+	return false;
+}
+
+static bool ath9300_otp_read16(struct pcidev *dev, uint32_t addr, uint16_t *value)
+{
+	uint32_t data;
+	if (!ath9300_otp_read32(dev,addr,&data))
+		return false;
+	*value = (data >> (8 * (addr & 2))) & 0xFFFF;
+	return true;
+}
+
+static void ath9k_eeprom_check(struct pcidev *dev)
+{
+	uint16_t data;
+	printf("Checking NVM size...\n");
+
+// reading EEPROM size and setting it's base address
+// thanks to Inv from forum.ixbt.com
+	if (dev->ops->eeprom_read16(dev, 128, &data) && (376 == data)) {
+		short_eeprom_base = 128;
+		short_eeprom_size = 376;
+		goto ssize_ok;
+	}
+	if (dev->ops->eeprom_read16(dev, 512, &data) && (3256 == data)) {
+		short_eeprom_base =  512;
+		short_eeprom_size = 3256;
+		goto ssize_ok;
+	}
+	if (dev->ops->eeprom_read16(dev, 256, &data) && (727 == data)) {
+		short_eeprom_base = 256;
+		short_eeprom_size = 727;
+		goto ssize_ok;
+	}
+
+	short_eeprom_base = 0;
+	short_eeprom_size = 0;
+	printf("Can't get ath9k eeprom size!\n");
+//	return false;
+ssize_ok:
+	printf("ath9k short eeprom base: %d  size: %d\n",
+		short_eeprom_base,
+		short_eeprom_size);
+}
+
+static bool ath9300_eeprom_check_header(struct pcidev *dev, bool (*read16_op)(struct pcidev *dev, uint32_t addr, uint16_t *value), uint32_t addr)
+{
+	uint16_t data[2];
+	bool r;
+	read16_op(dev, addr, data);
+	read16_op(dev, addr + 2, data+1);
+	r = (data[0] != 0 || data[1] !=0) && (data[0] != 0xFFFF || data[1] != 0xFFFF);
+	if (r)
+		short_eeprom_base = addr;
+	printf("%s %04x%04x  @%04x r=%d\n", __func__, data[0], data[1], addr, r);
+	return r;
+}
+
+/*
+static void ath9300_unpack_header(uint8_t *best, int *code, int *reference,
+				   int *length, int *major, int *minor)
+{
+	unsigned long value[4];
+
+	value[0] = best[0];
+	value[1] = best[1];
+	value[2] = best[2];
+	value[3] = best[3];
+	*code = ((value[0] >> 5) & 0x0007);
+	*reference = (value[0] & 0x001f) | ((value[1] >> 2) & 0x0020);
+	*length = ((value[1] << 4) & 0x07f0) | ((value[2] >> 4) & 0x000f);
+	*major = (value[2] & 0x000f);
+	*minor = (value[3] & 0x00ff);
+}
+*/
+
+static void ath9300_eeprom_check(struct pcidev *dev)
+{
+	printf("Trying EEPROM access...\n");
+	if (!dev->mem)
+		dev->ops->eeprom_read16  = &buf_read16;
+	else
+		dev->ops->eeprom_read16  = &ath9k_eeprom_read16;
+	if (
+		ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR_4K) ||
+		ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR) ||
+		ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR_512))
+	{
+		dev->ops->eeprom_writable = 1;
+		goto found;
+	}
+	if (!dev->mem) {
+		printf("Header not found in buffer!\n");
+		return;
+	}
+
+	printf("Trying OTP access...\n");
+	dev->ops->eeprom_read16  = &ath9300_otp_read16;
+	if (
+		ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR) ||
+		ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR_512))
+	{
+		dev->ops->eeprom_writable = 0;
+		goto found;
+	}
+	printf("NVM type identification failed!\n");
+	return;
+
+found:
+	printf("AR9300 device NVM type: %s\n", dev->ops->eeprom_writable ? "EEPROM" : "OTP");
+	printf("NVM found at: %04x\n", short_eeprom_base);
+
+/*
+	uint8_t header[4];
+	int code;
+	int reference, length, major, minor;
+
+	dev->ops->eeprom_read16(dev, short_eeprom_base,   (uint16_t*)header);
+	dev->ops->eeprom_read16(dev, short_eeprom_base+2, (uint16_t*)header+1);
+
+	ath9300_unpack_header(header, &code, &reference,
+			       &length, &major, &minor);
+	printf("Found block at %x: code=%d ref=%d length=%d major=%d minor=%d (RAW: %08x)\n",
+		short_eeprom_base, code, reference, length, major, minor, *(uint32_t*)header);
+
+
+	if ((!AR_SREV_9485 && length >= 1024) ||
+	    (AR_SREV_9485 && length > EEPROM_DATA_LEN_9485)) {
+		printf("Bad header!!!\n");
+//		cptr -= COMP_HDR_LEN;
+//		continue;
+	}
+*/
 }
 
 static bool ath9k_eeprom_write16(struct pcidev *dev, uint32_t addr, uint16_t value)
@@ -395,9 +531,6 @@ static bool ath9k_eeprom_write16_short(struct pcidev *dev, uint32_t addr, uint16
 	// just return, if address out of 'short' eeprom bounds
 	if ((addr <= short_eeprom_base) || (addr >= (short_eeprom_base + short_eeprom_size)))
 		return false;
-	if (!dev->mem)
-		return buf_write16(addr, value);
-
 	return ath9k_eeprom_write16(dev, addr, value);
 }
 
@@ -435,7 +568,6 @@ static void ath9k_eeprom_patch11n(struct pcidev *dev)
 
 static void ath9k_eeprom_parse(struct pcidev *dev)
 {
-
 	uint16_t
 		crc, crc_n,
 		opCap,
@@ -476,6 +608,11 @@ static void ath9k_eeprom_parse(struct pcidev *dev)
 		printf("error calculating CRC!\n");
 }
 
+static void ath9300_eeprom_parse(struct pcidev *dev)
+{
+	printf(" -> TODO: %s\n", __func__);
+}
+
 struct io_driver io_ath9k = {
 	.name             = "ath9k",
 	.valid_ids        = (struct pci_id*) &ath9k_ids,
@@ -485,30 +622,32 @@ struct io_driver io_ath9k = {
 	.eeprom_writable  = true,
 
 	.init_device	 = NULL,
-	.eeprom_check    = NULL,
+	.eeprom_check    = &ath9k_eeprom_check,
 	.eeprom_lock     = &ath9k_eeprom_lock,
 	.eeprom_release  = &ath9k_eeprom_release,
 	.eeprom_read16   = &ath9k_eeprom_read16,
 	.eeprom_write16  = &ath9k_eeprom_write16_short,
 	.eeprom_patch11n = &ath9k_eeprom_patch11n,
-	.eeprom_parse    = &ath9k_eeprom_parse
+	.eeprom_parse    = &ath9k_eeprom_parse,
+	.pdata			 = NULL
 };
 
 struct io_driver io_ath9300 = {
 	.name             = "ath9300",
 	.valid_ids        = (struct pci_id*) &ath9300_ids,
-	.mmap_size        = ATH9K_MMAP_LENGTH,
-	.eeprom_size	  = AR9300_EEPROM_SIZE,
+	.mmap_size        = ATH9300_MMAP_LENGTH,
+	.eeprom_size	  = ATH9300_EEPROM_SIZE,
 	.eeprom_signature = ATH9K_EEPROM_SIGNATURE,
 	.eeprom_writable  = true,
 
 	.init_device	 = NULL,
-	.eeprom_check    = NULL,
+	.eeprom_check    = &ath9300_eeprom_check,
 	.eeprom_lock     = &ath9k_eeprom_lock,
 	.eeprom_release  = &ath9k_eeprom_release,
 	.eeprom_read16   = &ath9k_eeprom_read16,
 	.eeprom_write16  = &ath9k_eeprom_write16_short,
 	.eeprom_patch11n = &ath9k_eeprom_patch11n,
-	.eeprom_parse    = &ath9k_eeprom_parse
+	.eeprom_parse    = &ath9300_eeprom_parse,
+	.pdata			 = NULL
 };
 

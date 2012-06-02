@@ -62,6 +62,7 @@ struct pcidev
 	struct io_driver *ops;
 	unsigned char   *mem;
 	bool 			eeprom_locked;
+	char			*forced_driver;
 };
 
 struct pci_id
@@ -78,21 +79,21 @@ enum byte_order
 };
 
 extern unsigned int  debug;
-#define EEPROM_SIZE_MAX  0x1000
+#define EEPROM_SIZE_MAX  0x4000
 
 extern bool preserve_mac;
 extern bool preserve_calib;
 
-extern bool buf_read16(unsigned int addr, uint16_t *value);
-extern bool buf_write16(unsigned int addr, uint16_t value);
+extern bool buf_read16(struct pcidev* dev, uint32_t addr, uint16_t *value);
+extern bool buf_write16(struct pcidev* dev, uint32_t addr, uint16_t value);
 
 struct io_driver {
-	const char		  *name;
+	const char		*name;
 	const struct pci_id *valid_ids;
-	uint32_t		  mmap_size;
-	uint32_t		  eeprom_size;
-	uint16_t		  eeprom_signature;
-	bool			  eeprom_writable;
+	uint32_t		mmap_size;
+	uint32_t		eeprom_size;
+	uint16_t		eeprom_signature;
+	bool			eeprom_writable;
 
 	bool (*init_device)(struct pcidev *dev);
 	void (*eeprom_check)(struct pcidev *dev);
@@ -103,6 +104,7 @@ struct io_driver {
 
 	void (*eeprom_patch11n)(struct pcidev *dev);
 	void (*eeprom_parse)(struct pcidev *dev);
+	void			*pdata;
 };
 
 typedef struct io_driver *io_driverp; 
