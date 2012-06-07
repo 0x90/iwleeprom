@@ -36,8 +36,6 @@
 #include "ath5kio.h"
 #include "ath9kio.h"
 
-extern uint16_t buf[EEPROM_SIZE_MAX/2];
-
 static struct option long_options[] = {
 	{"device",    1, NULL, 'd'},
 	{"nodev",     0, NULL, 'n'},
@@ -77,7 +75,7 @@ bool patch11n = false,
 
 unsigned int  debug = 0;
 
-uint16_t buf[EEPROM_SIZE_MAX/2];
+uint8_t buf[EEPROM_SIZE_MAX];
 
 struct pcidev dev;
 
@@ -141,10 +139,10 @@ void init_dump(struct pcidev *dev, char *filename)
 				dev->ops = iodrivers[d];
 			}
 		} else {
-			if ( iodrivers[d]->eeprom_signature == le2cpu16(buf[0])) {
+			if ( iodrivers[d]->eeprom_signature == le2cpu16(*(uint16_t*)buf)) {
 				dump_order = order_le;
 				dev->ops = iodrivers[d];
-			} else if ( iodrivers[d]->eeprom_signature == be2cpu16(buf[0])) {
+			} else if ( iodrivers[d]->eeprom_signature == be2cpu16(*(uint16_t*)buf)) {
 				dump_order = order_be;
 				dev->ops = iodrivers[d];
 			}
@@ -188,9 +186,9 @@ bool buf_read16(struct pcidev* dev, uint32_t addr, uint16_t *value)
 {
 	if (addr >= EEPROM_SIZE_MAX) return 0;
 	if (dump_order == order_le)
-		*value = le2cpu16(buf[addr >> 1]);
+		*value = le2cpu16(*(uint16_t*)(buf + addr));
 	else
-		*value = be2cpu16(buf[addr >> 1]);
+		*value = be2cpu16(*(uint16_t*)(buf + addr));
 	return true;
 }
 
@@ -198,9 +196,11 @@ bool buf_write16(struct pcidev* dev, uint32_t addr, uint16_t value)
 {
 	if (addr >= EEPROM_SIZE_MAX) return false;
 	if (dump_order == order_le)
-		buf[addr >> 1] = cpu2le16(value);
+		*(uint16_t*)(buf + addr) = cpu2le16(value);
+		// buf[addr >> 1] = cpu2le16(value);
 	else
-		buf[addr >> 1] = cpu2be16(value);
+		*(uint16_t*)(buf + addr) = cpu2be16(value);
+		// buf[addr >> 1] = cpu2be16(value);
 	return true;
 }
 
