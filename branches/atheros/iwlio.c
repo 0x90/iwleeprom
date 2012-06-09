@@ -223,11 +223,12 @@ retry_init:
 	return true;
 }
 
-static void iwl6k_eeprom_check(struct pcidev *dev)
+static bool iwl6k_eeprom_check(struct pcidev *dev)
 {
 	if ( PCI_IN32(CSR_OTP_GP_REG) & CSR_OTP_GP_REG_DEVICE_SELECT)
 		dev->ops->eeprom_writable = 1;
 	printf("IWL 6k device NVM type: %s\n", dev->ops->eeprom_writable ? "EEPROM" : "OTP");
+	return true;
 }
 
 static bool iwl_eeprom_lock(struct pcidev *dev)
@@ -543,6 +544,7 @@ struct io_driver io_iwl4965 = {
 	.eeprom_writable  = true,
 
 	.init_device     = &iwl_init_device,
+	.eeprom_init     = NULL,
 	.eeprom_check    = NULL,
 	.eeprom_lock     = &iwl_eeprom_lock,
 	.eeprom_release  = &iwl_eeprom_release,
@@ -562,6 +564,7 @@ struct io_driver io_iwl5k = {
 	.eeprom_writable  = true,
 
 	.init_device     = &iwl_init_device,
+	.eeprom_init     = NULL,
 	.eeprom_check    = NULL,
 	.eeprom_lock     = &iwl_eeprom_lock,
 	.eeprom_release  = &iwl_eeprom_release,
@@ -581,6 +584,7 @@ struct io_driver io_iwl6k = {
 	.eeprom_writable  = true,
 
 	.init_device     = &iwl_init_device,
+	.eeprom_init     = NULL,
 	.eeprom_check    = &iwl6k_eeprom_check,
 	.eeprom_lock     = &iwl_eeprom_lock,
 	.eeprom_release  = &iwl_eeprom_release,

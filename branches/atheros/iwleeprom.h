@@ -96,7 +96,8 @@ struct io_driver {
 	bool			eeprom_writable;
 
 	bool (*init_device)(struct pcidev *dev);
-	void (*eeprom_check)(struct pcidev *dev);
+	bool (*eeprom_init)(struct pcidev *dev);
+	bool (*eeprom_check)(struct pcidev *dev);
 	bool (*eeprom_lock)(struct pcidev *dev);
 	bool (*eeprom_release)(struct pcidev *dev);
 	bool (*eeprom_read16)(struct pcidev *dev, uint32_t addr, uint16_t *value);
