@@ -75,7 +75,7 @@ bool patch11n = false,
 
 unsigned int  debug = 0;
 
-uint8_t buf[EEPROM_SIZE_MAX];
+uint16_t buf[EEPROM_SIZE_MAX/2];
 
 struct pcidev dev;
 
@@ -123,16 +123,7 @@ void init_dump(struct pcidev *dev, char *filename)
 	eeprom_size = 2 * fread(buf, 2, EEPROM_SIZE_MAX/2, fd);
 	fclose(fd);
 	seteuid(suid);
-/*
-	printf("Dump file: '%s' (read %u bytes)\n", filename, eeprom_size);
-	if(eeprom_size < io_iwl4965.eeprom_size)
-		die("Too small file!\n");
 
-	if(eeprom_size == io_iwl4965.eeprom_size)
-		dev->ops = &io_iwl4965;	
-	else
-		dev->ops = &io_iwl5k;
-*/
 	for(d=0; !dev->ops && iodrivers[d]; d++) {
 		if (dev->forced_driver) {
 			if(!strcmp(dev->forced_driver, iodrivers[d]->name)) {
@@ -153,18 +144,11 @@ void init_dump(struct pcidev *dev, char *filename)
 		die("No usable IO driver found for this dump!\n");
 
 	printf(" Using IO driver%s: %s\n", dev->forced_driver ? " (forced)":"" ,dev->ops->name);
+	dev->ops->eeprom_size    = eeprom_size;
 	dev->ops->eeprom_read16  = &buf_read16;
 	dev->ops->eeprom_write16 = &buf_write16;
 
-/*
-	if ( dev->ops->eeprom_signature == le2cpu16(buf[0])) {
-		dump_order = order_le;
-	} else if ( dev->ops->eeprom_signature == be2cpu16(buf[0])) {
-		dump_order = order_be;
-	} else {
-		die("Invalid EEPROM signature!\n");
-	}
-*/
+
 	printf("  byte order: %s ENDIAN\n", (dump_order == order_le) ? "LITTLE":"BIG");
 }
 
@@ -186,9 +170,9 @@ bool buf_read16(struct pcidev* dev, uint32_t addr, uint16_t *value)
 {
 	if (addr >= EEPROM_SIZE_MAX) return 0;
 	if (dump_order == order_le)
-		*value = le2cpu16(*(uint16_t*)(buf + addr));
+		*value = le2cpu16(buf[addr >> 1]);	
 	else
-		*value = be2cpu16(*(uint16_t*)(buf + addr));
+		*value = be2cpu16(buf[addr >> 1]);
 	return true;
 }
 
@@ -196,11 +180,9 @@ bool buf_write16(struct pcidev* dev, uint32_t addr, uint16_t value)
 {
 	if (addr >= EEPROM_SIZE_MAX) return false;
 	if (dump_order == order_le)
-		*(uint16_t*)(buf + addr) = cpu2le16(value);
-		// buf[addr >> 1] = cpu2le16(value);
+		buf[addr >> 1] = cpu2le16(value);
 	else
-		*(uint16_t*)(buf + addr) = cpu2be16(value);
-		// buf[addr >> 1] = cpu2be16(value);
+		buf[addr >> 1] = cpu2be16(value);
 	return true;
 }
 
@@ -215,11 +197,8 @@ void eeprom_read(char *filename)
 	for (addr = 0; addr < dev.ops->eeprom_size; addr += 2)
 	{
 		if (!dev.ops->eeprom_read16(&dev, addr, &data)) return;
+		buf_write16(&dev, addr, data);
 
-		if (dump_order == order_le)
-			buf[addr/2] = cpu2le16( data );
-		else
-			buf[addr/2] = cpu2be16( data );
 		if (0 ==(addr & 0x7F)) printf("%04x [", addr);
 		printf("x");
 		if (0x7E ==(addr & 0x7F)) printf("]\n");
@@ -614,8 +593,11 @@ int main(int argc, char** argv)
 
 	init_card();
 
-	if (dev.ops->eeprom_check)
-		dev.ops->eeprom_check(&dev);
+	if (dev.ops->eeprom_init && !dev.ops->eeprom_init(&dev))
+		die("Basic eeprom init failed!\n");
+
+	if (dev.ops->eeprom_check && !dev.ops->eeprom_check(&dev))
+		die("eeprom check failed!\n");
 
 	if (dev.ops->eeprom_lock && !dev.ops->eeprom_lock(&dev))
 		die("Failed to lock eeprom!\n");
@@ -654,6 +636,9 @@ _nodev:
 	if (patch11n && !ofname)
 		die("Have to specify output file for 802.11n patch!\n");
 	init_dump(&dev, ifname);
+
+	if (dev.ops->eeprom_init && !dev.ops->eeprom_init(&dev))
+		die("Basic eeprom init failed!\n");
 
 	if (dev.ops->eeprom_check)
 		dev.ops->eeprom_check(&dev);

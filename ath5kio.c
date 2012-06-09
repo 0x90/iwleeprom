@@ -198,6 +198,7 @@ struct io_driver io_ath5k = {
 	.eeprom_writable  = true,
 
 	.init_device	 = NULL,
+	.eeprom_init     = NULL,
 	.eeprom_check    = NULL,
 	.eeprom_lock     = &ath5k_eeprom_lock,
 	.eeprom_release  = &ath5k_eeprom_release,
