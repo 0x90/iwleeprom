@@ -81,7 +81,7 @@ struct pcidev dev;
 
 #define DEVICES_PATH "/sys/bus/pci/devices"
 
-const io_driverp iodrivers[] = {
+static struct io_driver *iodrivers[] = {
 	&io_iwl4965,
 	&io_iwl5k,
 	&io_iwl6k,

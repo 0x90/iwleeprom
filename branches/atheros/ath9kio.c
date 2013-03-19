@@ -4,11 +4,11 @@
 * iwleeprom - EEPROM reader/writer for intel wifi cards.
 * Copyright (C) 2010, Alexander "ittrium" Kalinichenko <alexander@kalinichenko.org>
 * ICQ: 152322, Skype: ittr1um		
-* Copyright (C) 2010, Gennady "ShultZ" Kozlov <qpxtool@mail.ru>
+* Copyright (C) 2010,2012, Gennady "ShultZ" Kozlov <qpxtool@mail.ru>
 *
 *
 * some values and HW identify code got from Atheros ath9k Linux driver
-* Copyright (c) 2008-2010 Atheros Communications Inc.
+* Copyright (c) 2008-2012 Atheros Communications Inc.
 *
 *
 * This program is free software; you can redistribute it and/or modify
@@ -24,14 +24,20 @@
 ****************************************************************************
 */
 
+#include <linux/types.h>
 #include "ath9kio.h"
 
+#define LE16(x) (x)
+
+#define AR9300_PWR_TABLE_OFFSET		0
 #define ATH9K_EEPROM_SIZE           0x1000
 #define ATH9K_EEPROM_SIGNATURE      0xA55A
 #define ATH9K_MMAP_LENGTH          0x10000
 #define ATH9300_MMAP_LENGTH        0x20000
 
-#define ATH9300_EEPROM_SIZE			0x4000
+#define ATH9300_EEPROM_SIZE			0x400
+#define COMP_HDR_LEN				4
+#define COMP_CKSUM_LEN				2
 #define EEPROM_DATA_LEN_9485		1088
 
 #define AR5416_EEPROM_S             2
@@ -121,14 +127,284 @@
 #define AR9300_BASE_ADDR		0x3ff
 #define AR9300_BASE_ADDR_512	0x1ff
 
+#define AR9300_OTP_SIZE          0x1000
 #define AR9300_OTP_BASE			0x14000
-#define AR9300_OTP_SIZE			 0x1000
 #define AR9300_OTP_STATUS		0x15f18
 #define AR9300_OTP_STATUS_TYPE		0x7
 #define AR9300_OTP_STATUS_VALID		0x4
 #define AR9300_OTP_STATUS_ACCESS_BUSY	0x2
 #define AR9300_OTP_STATUS_SM_BUSY	0x1
 #define AR9300_OTP_READ_DATA		0x15f1c
+
+#define AR9300_CUSTOMER_DATA_SIZE    20
+
+// AR9300 eeprom data compression type from ath9k driver
+enum AR9300_CompressAlgorithm {
+	AR9300_CompressNone = 0,
+	AR9300_CompressLzma,
+	AR9300_CompressPairs,
+	AR9300_CompressBlock,
+	AR9300_Compress4,
+	AR9300_Compress5,
+	AR9300_Compress6,
+	AR9300_Compress7,
+};
+
+struct eepFlags {
+	uint8_t opFlags;
+	uint8_t eepMisc;
+}; // __packed;
+
+struct ar9300_base_eep_hdr {
+	__le16 regDmn[2];
+	/* 4 bits tx and 4 bits rx */
+	uint8_t txrxMask;
+	struct eepFlags opCapFlags;
+	uint8_t rfSilent;
+	uint8_t blueToothOptions;
+	uint8_t deviceCap;
+	/* takes lower byte in eeprom location */
+	uint8_t deviceType;
+	/* offset in dB to be added to beginning
+	 * of pdadc table in calibration
+	 */
+	int8_t pwrTableOffset;
+	uint8_t params_for_tuning_caps[2];
+	/*
+	 * bit0 - enable tx temp comp
+	 * bit1 - enable tx volt comp
+	 * bit2 - enable fastClock - default to 1
+	 * bit3 - enable doubling - default to 1
+	 * bit4 - enable internal regulator - default to 1
+	 */
+	uint8_t featureEnable;
+	/* misc flags: bit0 - turn down drivestrength */
+	uint8_t miscConfiguration;
+	uint8_t eepromWriteEnableGpio;
+	uint8_t wlanDisableGpio;
+	uint8_t wlanLedGpio;
+	uint8_t rxBandSelectGpio;
+	uint8_t txrxgain;
+	/* SW controlled internal regulator fields */
+	__le32 swreg;
+}; // __packed;
+
+struct ar9300_eeprom {
+	uint8_t eepromVersion;
+	uint8_t templateVersion;
+	uint8_t macAddr[6];
+	uint8_t custData[AR9300_CUSTOMER_DATA_SIZE];
+
+	struct ar9300_base_eep_hdr baseEepHeader;
+};
+
+static const struct ar9300_eeprom ar9300_default = {
+	.eepromVersion = 2,
+	.templateVersion = 2,
+	.macAddr = {0, 2, 3, 4, 5, 6},
+	.custData = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		     0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+	.baseEepHeader = {
+		.regDmn = { LE16(0), LE16(0x1f) },
+		.txrxMask =  0x77, /* 4 bits tx and 4 bits rx */
+		.opCapFlags = {
+			.opFlags = AR5416_OPFLAGS_11G | AR5416_OPFLAGS_11A,
+			.eepMisc = 0,
+		},
+		.rfSilent = 0,
+		.blueToothOptions = 0,
+		.deviceCap = 0,
+		.deviceType = 5, /* takes lower byte in eeprom location */
+		.pwrTableOffset = AR9300_PWR_TABLE_OFFSET,
+		.params_for_tuning_caps = {0, 0},
+		.featureEnable = 0x0c,
+		 /*
+		  * bit0 - enable tx temp comp - disabled
+		  * bit1 - enable tx volt comp - disabled
+		  * bit2 - enable fastClock - enabled
+		  * bit3 - enable doubling - enabled
+		  * bit4 - enable internal regulator - disabled
+		  * bit5 - enable pa predistortion - disabled
+		  */
+		.miscConfiguration = 0, /* bit0 - turn down drivestrength */
+		.eepromWriteEnableGpio = 3,
+		.wlanDisableGpio = 0,
+		.wlanLedGpio = 8,
+		.rxBandSelectGpio = 0xff,
+		.txrxgain = 0,
+		.swreg = 0,
+	 }
+};
+
+static const struct ar9300_eeprom ar9300_x113 = {
+	.eepromVersion = 2,
+	.templateVersion = 6,
+	.macAddr = {0x00, 0x03, 0x7f, 0x0, 0x0, 0x0},
+	.custData = {"x113-023-f0000"},
+	.baseEepHeader = {
+		.regDmn = { LE16(0), LE16(0x1f) },
+		.txrxMask =  0x77, /* 4 bits tx and 4 bits rx */
+		.opCapFlags = {
+			.opFlags = AR5416_OPFLAGS_11A,
+			.eepMisc = 0,
+		},
+		.rfSilent = 0,
+		.blueToothOptions = 0,
+		.deviceCap = 0,
+		.deviceType = 5, /* takes lower byte in eeprom location */
+		.pwrTableOffset = AR9300_PWR_TABLE_OFFSET,
+		.params_for_tuning_caps = {0, 0},
+		.featureEnable = 0x0d,
+		 /*
+		  * bit0 - enable tx temp comp - disabled
+		  * bit1 - enable tx volt comp - disabled
+		  * bit2 - enable fastClock - enabled
+		  * bit3 - enable doubling - enabled
+		  * bit4 - enable internal regulator - disabled
+		  * bit5 - enable pa predistortion - disabled
+		  */
+		.miscConfiguration = 0, /* bit0 - turn down drivestrength */
+		.eepromWriteEnableGpio = 6,
+		.wlanDisableGpio = 0,
+		.wlanLedGpio = 8,
+		.rxBandSelectGpio = 0xff,
+		.txrxgain = 0x21,
+		.swreg = 0,
+	 }
+};
+
+
+static const struct ar9300_eeprom ar9300_h112 = {
+	.eepromVersion = 2,
+	.templateVersion = 3,
+	.macAddr = {0x00, 0x03, 0x7f, 0x0, 0x0, 0x0},
+	.custData = {"h112-241-f0000"},
+	.baseEepHeader = {
+		.regDmn = { LE16(0), LE16(0x1f) },
+		.txrxMask =  0x77, /* 4 bits tx and 4 bits rx */
+		.opCapFlags = {
+			.opFlags = AR5416_OPFLAGS_11G | AR5416_OPFLAGS_11A,
+			.eepMisc = 0,
+		},
+		.rfSilent = 0,
+		.blueToothOptions = 0,
+		.deviceCap = 0,
+		.deviceType = 5, /* takes lower byte in eeprom location */
+		.pwrTableOffset = AR9300_PWR_TABLE_OFFSET,
+		.params_for_tuning_caps = {0, 0},
+		.featureEnable = 0x0d,
+		/*
+		 * bit0 - enable tx temp comp - disabled
+		 * bit1 - enable tx volt comp - disabled
+		 * bit2 - enable fastClock - enabled
+		 * bit3 - enable doubling - enabled
+		 * bit4 - enable internal regulator - disabled
+		 * bit5 - enable pa predistortion - disabled
+		 */
+		.miscConfiguration = 0, /* bit0 - turn down drivestrength */
+		.eepromWriteEnableGpio = 6,
+		.wlanDisableGpio = 0,
+		.wlanLedGpio = 8,
+		.rxBandSelectGpio = 0xff,
+		.txrxgain = 0x10,
+		.swreg = 0,
+	}
+};
+
+
+static const struct ar9300_eeprom ar9300_x112 = {
+	.eepromVersion = 2,
+	.templateVersion = 5,
+	.macAddr = {0x00, 0x03, 0x7f, 0x0, 0x0, 0x0},
+	.custData = {"x112-041-f0000"},
+	.baseEepHeader = {
+		.regDmn = { LE16(0), LE16(0x1f) },
+		.txrxMask =  0x77, /* 4 bits tx and 4 bits rx */
+		.opCapFlags = {
+			.opFlags = AR5416_OPFLAGS_11G | AR5416_OPFLAGS_11A,
+			.eepMisc = 0,
+		},
+		.rfSilent = 0,
+		.blueToothOptions = 0,
+		.deviceCap = 0,
+		.deviceType = 5, /* takes lower byte in eeprom location */
+		.pwrTableOffset = AR9300_PWR_TABLE_OFFSET,
+		.params_for_tuning_caps = {0, 0},
+		.featureEnable = 0x0d,
+		/*
+		 * bit0 - enable tx temp comp - disabled
+		 * bit1 - enable tx volt comp - disabled
+		 * bit2 - enable fastclock - enabled
+		 * bit3 - enable doubling - enabled
+		 * bit4 - enable internal regulator - disabled
+		 * bit5 - enable pa predistortion - disabled
+		 */
+		.miscConfiguration = 0, /* bit0 - turn down drivestrength */
+		.eepromWriteEnableGpio = 6,
+		.wlanDisableGpio = 0,
+		.wlanLedGpio = 8,
+		.rxBandSelectGpio = 0xff,
+		.txrxgain = 0x0,
+		.swreg = 0,
+	}
+};
+
+static const struct ar9300_eeprom ar9300_h116 = {
+	.eepromVersion = 2,
+	.templateVersion = 4,
+	.macAddr = {0x00, 0x03, 0x7f, 0x0, 0x0, 0x0},
+	.custData = {"h116-041-f0000"},
+	.baseEepHeader = {
+		.regDmn = { LE16(0), LE16(0x1f) },
+		.txrxMask =  0x33, /* 4 bits tx and 4 bits rx */
+		.opCapFlags = {
+			.opFlags = AR5416_OPFLAGS_11G | AR5416_OPFLAGS_11A,
+			.eepMisc = 0,
+		},
+		.rfSilent = 0,
+		.blueToothOptions = 0,
+		.deviceCap = 0,
+		.deviceType = 5, /* takes lower byte in eeprom location */
+		.pwrTableOffset = AR9300_PWR_TABLE_OFFSET,
+		.params_for_tuning_caps = {0, 0},
+		.featureEnable = 0x0d,
+		 /*
+		  * bit0 - enable tx temp comp - disabled
+		  * bit1 - enable tx volt comp - disabled
+		  * bit2 - enable fastClock - enabled
+		  * bit3 - enable doubling - enabled
+		  * bit4 - enable internal regulator - disabled
+		  * bit5 - enable pa predistortion - disabled
+		  */
+		.miscConfiguration = 0, /* bit0 - turn down drivestrength */
+		.eepromWriteEnableGpio = 6,
+		.wlanDisableGpio = 0,
+		.wlanLedGpio = 8,
+		.rxBandSelectGpio = 0xff,
+		.txrxgain = 0x10,
+		.swreg = 0,
+	 }
+};
+
+static const struct ar9300_eeprom *ar9300_eep_templates[] = {
+	&ar9300_default,
+	&ar9300_x112,
+	&ar9300_h116,
+	&ar9300_h112,
+	&ar9300_x113,
+};
+
+static const struct ar9300_eeprom *ar9003_eeprom_struct_find_by_id(int id)
+{
+#define N_LOOP (sizeof(ar9300_eep_templates) / sizeof(ar9300_eep_templates[0]))
+	int it;
+
+	for (it = 0; it < N_LOOP; it++)
+		if (ar9300_eep_templates[it]->templateVersion == id)
+			return ar9300_eep_templates[it];
+	return NULL;
+#undef N_LOOP
+}
 
 /* Atheros 9k devices */
 const struct pci_id ath9k_ids[] = {
@@ -178,7 +454,10 @@ static struct {
 
 struct ath9300_private {
 	bool eeprom_filled;
-	uint8_t eeprom_data[ATH9300_EEPROM_SIZE];
+	uint8_t eeprom_raw[ATH9300_EEPROM_SIZE];
+	bool otp_filled;
+	uint8_t otp_raw[AR9300_OTP_SIZE];
+	struct ar9300_eeprom eeprom;
 };
 
 static const char *ath9k_hw_name(uint16_t mac_bb_version)
@@ -213,7 +492,7 @@ static const char *ath9k_rf_name(uint16_t rf_version)
 
 #define WAIT_TIMEOUT 10000 /* x10 us */
 
-uint32_t short_eeprom_base,
+int32_t	 short_eeprom_base,
 		 short_eeprom_size;
 uint16_t macVer,
 		 macRev,
@@ -291,6 +570,20 @@ static bool ath9300_eeprom_init(struct pcidev *dev) {
 	}
 	dev->ops->pdata = (void*) pdata;
 	pdata->eeprom_filled = false;
+	pdata->otp_filled = false;
+	return true;
+}
+
+static bool ath9300_nvm_read(struct pcidev *dev, uint32_t addr, uint16_t len, uint8_t *buf)
+{
+	uint16_t tval;
+	uint16_t tlen = len;
+	while (tlen) {
+		dev->ops->eeprom_read16(dev, addr & ~1, &tval);
+		buf[len-tlen] =  (addr & 1) ? (tval >> 8) & 0xFF : tval & 0xFF;
+		addr--;
+		tlen--;
+	}
 	return true;
 }
 
@@ -317,6 +610,32 @@ static bool ath9k_eeprom_crc_calc(struct pcidev *dev, uint16_t *crcp)
 		*crcp = crc;
 	printf("\n");
 	return true;
+}
+
+static bool ath9300_eeprom_crc_calc(struct pcidev *dev, uint32_t addr, uint16_t len, uint16_t *crcp)
+{
+	uint16_t crc = 0;
+	uint8_t *buf = (uint8_t*) malloc(len * sizeof(uint8_t));
+	bool r = false;
+
+	if (!len)
+		return false;
+	printf("Calculating EEPROM CRC...\n");
+
+	if (!ath9300_nvm_read(dev, addr, len, buf)) 
+		goto crc_done;
+		
+	while(len) {
+		len--;
+		crc += buf[len];
+	}
+	if (crcp)
+		*crcp = crc;
+	r = true;
+
+crc_done:
+	free(buf);
+	return r;
 }
 
 static bool ath9k_eeprom_crc_update(struct pcidev *dev)
@@ -379,7 +698,7 @@ static bool ath9300_eeprom_fill(struct pcidev *dev)
 
 	printf("Filling ath9300 EEPROM...");
 	for (addr=0; addr<ATH9300_EEPROM_SIZE; addr+=2) {
-		if (!read16_op(dev, addr, (uint16_t*)(pdata->eeprom_data + addr)))
+		if (!read16_op(dev, addr, (uint16_t*)(pdata->eeprom_raw + addr)))
 			return false;
 	}
 	pdata->eeprom_filled = true;
@@ -390,6 +709,10 @@ static bool ath9300_eeprom_fill(struct pcidev *dev)
 static bool ath9300_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *value)
 {
 	struct ath9300_private *pdata = (struct ath9300_private*) dev->ops->pdata;
+	if (addr > ATH9300_EEPROM_SIZE) {
+		printf("OTP address out of range: %04x\n", addr);
+		return false;
+	}
 	if (!pdata) {
 		printf("ath9300 EEPROM not initialized yet!");
 		return false;
@@ -398,7 +721,7 @@ static bool ath9300_eeprom_read16(struct pcidev *dev, uint32_t addr, uint16_t *v
 		printf("error filling ath9300 EEPROM");
 		return false;
 	}
-	*value = *(uint16_t*)(pdata->eeprom_data + addr);
+	*value = *(uint16_t*)(pdata->eeprom_raw + addr);
 	return true;
 }
 
@@ -407,7 +730,7 @@ static bool ath9300_otp_read32(struct pcidev *dev, uint32_t addr, uint32_t *valu
 	int32_t data;
 	int i;
 	if (addr > AR9300_OTP_SIZE) {
-		printf("OTP address out of range");
+		printf("OTP address out of range: %04x\n", addr);
 		return false;
 	}
 
@@ -424,12 +747,41 @@ static bool ath9300_otp_read32(struct pcidev *dev, uint32_t addr, uint32_t *valu
 	return false;
 }
 
+static bool ath9300_otp_fill(struct pcidev *dev)
+{
+	uint32_t addr;
+	struct ath9300_private *pdata = (struct ath9300_private*) dev->ops->pdata;
+	if (!dev->mem)
+	printf("Filling ath9300 OTP...");
+	for (addr=0; addr<AR9300_OTP_SIZE; addr+=4) {
+		if (!ath9300_otp_read32(dev, addr, (uint32_t*)(pdata->otp_raw + addr)))
+			return false;
+	}
+	pdata->otp_filled = true;
+	printf(" DONE\n");
+	return true;
+}
+
 static bool ath9300_otp_read16(struct pcidev *dev, uint32_t addr, uint16_t *value)
 {
-	uint32_t data;
-	if (!ath9300_otp_read32(dev,addr,&data))
+	struct ath9300_private *pdata = (struct ath9300_private*) dev->ops->pdata;
+	if (addr > AR9300_OTP_SIZE) {
+		printf("OTP address out of range: %04x\n", addr);
 		return false;
-	*value = (data >> (8 * (addr & 2))) & 0xFFFF;
+	}
+	if (!dev->mem) {
+		printf("OTP functions can't be used in device-less mode!\n");
+		return false;
+	}
+	if (!pdata) {
+		printf("ath9300 OTP not initialized yet!\n");
+		return false;
+	}
+	if (!pdata->otp_filled && !ath9300_otp_fill(dev)) {
+		printf("error filling ath9300 OTP data\n");
+		return false;
+	}
+	*value = *(uint16_t*)(pdata->otp_raw + addr);
 	return true;
 }
 
@@ -467,12 +819,12 @@ ssize_ok:
 	return true;
 }
 
-static bool ath9300_eeprom_check_header(struct pcidev *dev, bool (*read16_op)(struct pcidev *dev, uint32_t addr, uint16_t *value), uint32_t addr)
+static bool ath9300_eeprom_check_header(struct pcidev *dev, uint32_t addr)
 {
-	uint16_t data[2];
+	uint16_t data[2] = { 0, 0 };
 	bool r;
-	read16_op(dev, addr, data);
-	read16_op(dev, addr + 2, data+1);
+	dev->ops->eeprom_read16(dev, addr,   data);
+	dev->ops->eeprom_read16(dev, addr+2, data+1);
 	r = (data[0] != 0 || data[1] !=0) && (data[0] != 0xFFFF || data[1] != 0xFFFF);
 	if (r)
 		short_eeprom_base = addr;
@@ -480,20 +832,98 @@ static bool ath9300_eeprom_check_header(struct pcidev *dev, bool (*read16_op)(st
 	return r;
 }
 
-static void ath9300_unpack_header(uint8_t *best, int *code, int *reference,
+static void ath9300_unpack_header(uint8_t *data, int *code, int *reference,
 				   int *length, int *major, int *minor)
 {
 	unsigned long value[4];
 
-	value[0] = best[0];
-	value[1] = best[1];
-	value[2] = best[2];
-	value[3] = best[3];
+	value[0] = data[0];
+	value[1] = data[1];
+	value[2] = data[2];
+	value[3] = data[3];
 	*code = ((value[0] >> 5) & 0x0007);
 	*reference = (value[0] & 0x001f) | ((value[1] >> 2) & 0x0020);
 	*length = ((value[1] << 4) & 0x07f0) | ((value[2] >> 4) & 0x000f);
 	*major = (value[2] & 0x000f);
 	*minor = (value[3] & 0x00ff);
+}
+
+static bool ath9300_uncompress_block(uint8_t *mptr,
+				    int mdataSize,
+				    uint8_t *block,
+				    int size)
+{
+	int it;
+	int spot;
+	int offset;
+	int length;
+
+	spot = 0;
+
+	for (it = 0; it < size; it += (length+2)) {
+		offset = block[it];
+		offset &= 0xff;
+		spot += offset;
+		length = block[it+1];
+		length &= 0xff;
+
+		if (length > 0 && spot >= 0 && spot+length <= mdataSize) {
+#if 0
+			printf("Restore at %d: spot=%d offset=%d length=%d\n",
+				it, spot, offset, length);
+#endif
+			memcpy(&mptr[spot], &block[it+2], length);
+			spot += length;
+		} else if (length > 0) {
+#if 0
+			printf("Bad restore at %d: spot=%d offset=%d length=%d\n",
+				it, spot, offset, length);
+#endif
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool ath9300_eeprom_decompress(struct pcidev *dev, int code, int reference, uint32_t addr, int length)
+{
+	struct ath9300_private *pdata = dev->ops->pdata;
+	uint8_t *buf = (uint8_t*) malloc (length * sizeof(uint8_t));
+	int elen = (sizeof(struct ar9300_eeprom) > length) ? length : sizeof(struct ar9300_eeprom);
+	const struct ar9300_eeprom *eep = NULL;
+
+	if (!ath9300_nvm_read(dev, addr, length + COMP_HDR_LEN, buf))
+		return false;
+#if 0
+	printf("ar9300_eeprom structure size: %d\n", sizeof(struct ar9300_eeprom));
+#endif
+	switch(code) {
+		case AR9300_CompressNone:
+			printf("eeprom uncompressed\n");
+			//memcpy((void*)pdata->eeprom, (void*) (buf + COMP_HDR_LEN), length);
+			memcpy(&pdata->eeprom, buf + COMP_HDR_LEN, elen);
+			break;
+		case AR9300_CompressBlock:
+			printf("compression : block\n");
+			if (reference) {
+				eep = ar9003_eeprom_struct_find_by_id(reference);
+				if (eep == NULL) {
+					printf("can't find reference eeprom struct %d\n", reference);
+					free(buf);
+					return false;
+				}
+				memcpy(&pdata->eeprom, eep, sizeof(struct ar9300_eeprom));
+			}
+			ath9300_uncompress_block((uint8_t*)&pdata->eeprom, sizeof(struct ar9300_eeprom),
+					buf + COMP_HDR_LEN, length);
+			break;
+		default:
+			printf("unknown compression type!\n");
+			free(buf);
+			return false;
+	}
+	free(buf);
+	return true;
 }
 
 static bool ath9300_eeprom_check(struct pcidev *dev)
@@ -511,12 +941,12 @@ static bool ath9300_eeprom_check(struct pcidev *dev)
 	else
 		addr = AR9300_BASE_ADDR;
 
-	if (ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, addr) ||
-		ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR_512))
+	if (ath9300_eeprom_check_header(dev, addr) ||
+		ath9300_eeprom_check_header(dev, AR9300_BASE_ADDR_512))
 */
-	if (ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR_4K) ||
-		ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR) ||
-		ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR_512))
+	if (ath9300_eeprom_check_header(dev, AR9300_BASE_ADDR_4K) ||
+		ath9300_eeprom_check_header(dev, AR9300_BASE_ADDR) ||
+		ath9300_eeprom_check_header(dev, AR9300_BASE_ADDR_512))
 	{
 		dev->ops->eeprom_writable = 1;
 		goto found;
@@ -529,8 +959,8 @@ static bool ath9300_eeprom_check(struct pcidev *dev)
 	printf("Trying OTP access...\n");
 	dev->ops->eeprom_read16  = &ath9300_otp_read16;
 	if (
-		ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR) ||
-		ath9300_eeprom_check_header(dev, dev->ops->eeprom_read16, AR9300_BASE_ADDR_512))
+		ath9300_eeprom_check_header(dev, AR9300_BASE_ADDR) ||
+		ath9300_eeprom_check_header(dev, AR9300_BASE_ADDR_512))
 	{
 		dev->ops->eeprom_writable = 0;
 		dev->ops->eeprom_size = AR9300_OTP_SIZE;
@@ -540,33 +970,53 @@ static bool ath9300_eeprom_check(struct pcidev *dev)
 	return false;
 
 found:
-	printf("AR9300 device NVM type: %s\n", dev->ops->eeprom_writable ? "EEPROM" : "OTP");
-	printf("NVM found at: %04x\n", short_eeprom_base);
+//	printf("NVM found at: %04x\n", short_eeprom_base);
+	printf("AR9300 device NVM type: %s  (data block @%04x)\n",
+		dev->ops->eeprom_writable ? "EEPROM" : "OTP",
+		short_eeprom_base);
 
 	uint8_t header[4];
 	int code;
 	int reference, length, major, minor;
+	uint16_t crc, scrc;
 
-	while (short_eeprom_size>0 && short_eeprom_base>0) {
-		dev->ops->eeprom_read16(dev, short_eeprom_base,   (uint16_t*)header);
-		dev->ops->eeprom_read16(dev, short_eeprom_base+2, (uint16_t*)header+1);
+	while (!short_eeprom_size && short_eeprom_base>0) {
+		ath9300_nvm_read(dev, short_eeprom_base, COMP_HDR_LEN, header);
 
 		ath9300_unpack_header(header, &code, &reference,
 			    &length, &major, &minor);
 		printf("Found block at %x: code=%d ref=%d length=%d major=%d minor=%d (RAW: %08x)\n",
 				short_eeprom_base, code, reference, length, major, minor, *(uint32_t*)header);
 
-
 		if ((!AR_SREV_9485 && length >= 1024) ||
-		    (AR_SREV_9485 && length > EEPROM_DATA_LEN_9485)) {
+		    (AR_SREV_9485 && length > EEPROM_DATA_LEN_9485) ||
+			(length > short_eeprom_base) ||
+			!length) {
 			printf("Bad header!!!\n");
-			short_eeprom_base -= 4; //COMP_HDR_LEN;
+			short_eeprom_base -= COMP_HDR_LEN;
 			continue;
 		}
-		short_eeprom_size = length;
+		ath9300_eeprom_crc_calc(dev, short_eeprom_base - COMP_HDR_LEN, length, &crc);
+		ath9300_nvm_read(dev, short_eeprom_base - length - COMP_HDR_LEN, 2, (uint8_t*)&scrc);
+		printf("CRC (stored): %04x\n", scrc);
+		printf("CRC (eval)  : %04x\n", crc);
+
+		if (crc != scrc) {
+			printf("Bad checksum!\n");
+//			short_eeprom_base -= (6 + length);
+//			continue;
+			short_eeprom_base = 0;
+			short_eeprom_size = 0;
+			goto eeprom_check_done;
+		}
+		ath9300_eeprom_decompress(dev, code, reference, short_eeprom_base, length);
+
+		short_eeprom_size = length + COMP_HDR_LEN + COMP_CKSUM_LEN;
+		short_eeprom_base -= short_eeprom_size - 1;
 	}
 
-	printf("ath9k short eeprom base: %d (0x%04x) size: %d\n",
+eeprom_check_done:
+	printf("ath9300 short eeprom base: %d (0x%04x) size: %d\n",
 		short_eeprom_base,
 		short_eeprom_base,
 		short_eeprom_size);
@@ -708,7 +1158,65 @@ static void ath9k_eeprom_parse(struct pcidev *dev)
 
 static void ath9300_eeprom_parse(struct pcidev *dev)
 {
-	printf(" -> TODO: %s\n", __func__);
+	struct ath9300_private *pdata = (struct ath9300_private*) dev->ops->pdata;
+	printf("\n==== BASE ====\n");
+	printf("Version     : %02x\n", pdata->eeprom.eepromVersion);
+	printf("Template    : %02x\n", pdata->eeprom.templateVersion);
+	printf("Cust data   : %s\n", pdata->eeprom.custData);
+	printf("MAC address : %02x:%02x:%02x:%02x:%02x:%02x\n",
+			pdata->eeprom.macAddr[0],
+			pdata->eeprom.macAddr[1],
+			pdata->eeprom.macAddr[2],
+			pdata->eeprom.macAddr[3],
+			pdata->eeprom.macAddr[4],
+			pdata->eeprom.macAddr[5]);
+	printf("Reg. domain : %04x %04x\n",
+		pdata->eeprom.baseEepHeader.regDmn[0],
+		pdata->eeprom.baseEepHeader.regDmn[1]);
+	printf("Tx mask     : %d%d%d%d\n",
+		(pdata->eeprom.baseEepHeader.txrxMask & 0x80)?1:0,
+		(pdata->eeprom.baseEepHeader.txrxMask & 0x40)?1:0,
+		(pdata->eeprom.baseEepHeader.txrxMask & 0x20)?1:0,
+		(pdata->eeprom.baseEepHeader.txrxMask & 0x10)?1:0);
+	printf("Rx mask     : %d%d%d%d\n",
+		(pdata->eeprom.baseEepHeader.txrxMask & 0x08)?1:0,
+		(pdata->eeprom.baseEepHeader.txrxMask & 0x04)?1:0,
+		(pdata->eeprom.baseEepHeader.txrxMask & 0x02)?1:0,
+		(pdata->eeprom.baseEepHeader.txrxMask & 0x01)?1:0);
+	printf("Capabilities: %02x\n"
+		   "       Bands:%s%s\n", pdata->eeprom.baseEepHeader.opCapFlags.opFlags,
+		(pdata->eeprom.baseEepHeader.opCapFlags.opFlags & AR5416_OPFLAGS_11A) ? " 5GHz" : "",
+		(pdata->eeprom.baseEepHeader.opCapFlags.opFlags & AR5416_OPFLAGS_11G) ? " 2.4GHz" : "");
+
+	printf("       HT 2G:%s%s\n",
+		(pdata->eeprom.baseEepHeader.opCapFlags.opFlags & AR5416_OPFLAGS_N_2G_HT20) ? "":" HT20",
+		(pdata->eeprom.baseEepHeader.opCapFlags.opFlags & AR5416_OPFLAGS_N_2G_HT40) ? "":" HT40");
+	printf("       HT 5G:%s%s\n",
+		(pdata->eeprom.baseEepHeader.opCapFlags.opFlags & AR5416_OPFLAGS_N_5G_HT20) ? "":" HT20",
+		(pdata->eeprom.baseEepHeader.opCapFlags.opFlags & AR5416_OPFLAGS_N_5G_HT40) ? "":" HT40");
+
+
+	printf("Misc flags  : %02x\n", pdata->eeprom.baseEepHeader.opCapFlags.eepMisc);
+	printf("Big endian  :  %x\n", pdata->eeprom.baseEepHeader.opCapFlags.eepMisc & 0x01);
+
+	printf("\n==== MISC ====\n");
+	printf("rfSilent       : %02x\n", pdata->eeprom.baseEepHeader.rfSilent);
+	printf("BT options     : %02x\n", pdata->eeprom.baseEepHeader.blueToothOptions);
+	printf("deviceCap      : %02x\n", pdata->eeprom.baseEepHeader.deviceCap);
+	printf("deviceType     : %02x\n", pdata->eeprom.baseEepHeader.deviceType);
+	printf("pwrTableOffset : %02x\n", pdata->eeprom.baseEepHeader.pwrTableOffset);
+	printf("tuning params  : %02x %02x\n",
+		pdata->eeprom.baseEepHeader.params_for_tuning_caps[0],
+		pdata->eeprom.baseEepHeader.params_for_tuning_caps[1]);
+	printf("featureEnable  : %02x\n", pdata->eeprom.baseEepHeader.featureEnable);
+	printf("miscConfig     : %02x\n", pdata->eeprom.baseEepHeader.miscConfiguration);
+	printf("txrxgain       : %02x\n", pdata->eeprom.baseEepHeader.txrxgain);
+	printf("swreg          : %08x\n", pdata->eeprom.baseEepHeader.swreg);
+	printf("\n==== GPIO ====\n");
+	printf("EEPROM WE      : %02x\n", pdata->eeprom.baseEepHeader.eepromWriteEnableGpio);
+	printf("WLAN disable   : %02x\n", pdata->eeprom.baseEepHeader.wlanDisableGpio);
+	printf("WLAN LED       : %02x\n", pdata->eeprom.baseEepHeader.wlanLedGpio);
+	printf("Rx band select : %02x\n", pdata->eeprom.baseEepHeader.rxBandSelectGpio);
 }
 
 struct io_driver io_ath9k = {

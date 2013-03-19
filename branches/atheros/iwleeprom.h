@@ -108,7 +108,5 @@ struct io_driver {
 	void			*pdata;
 };
 
-typedef struct io_driver *io_driverp; 
-
 #endif
 
