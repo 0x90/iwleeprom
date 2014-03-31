@@ -588,10 +588,10 @@ int main(int argc, char** argv)
 	if(!ifname && !ofname && !patch11n && !parse)
 		printf("No file names given nor actions selected!\nNo EEPROM actions will be performed, just write-enable test\n");
 
+	init_card();
+
 	if (init_device && dev.ops->init_device && !dev.ops->init_device(&dev))
 		die("Device init failed!\n");
-
-	init_card();
 
 	if (dev.ops->eeprom_init && !dev.ops->eeprom_init(&dev))
 		die("Basic eeprom init failed!\n");
