@@ -565,7 +565,7 @@ static bool ath9300_eeprom_init(struct pcidev *dev) {
 	ath9k_eeprom_init(dev);
 	struct ath9300_private *pdata = (struct ath9300_private*) malloc(sizeof(struct ath9300_private));
 	if (!pdata) {
-		printf("Can't allocate memory for ath9300_private structure!");
+		printf("Can't allocate memory for ath9300_private structure!\n");
 		return false;
 	}
 	dev->ops->pdata = (void*) pdata;
@@ -658,7 +658,7 @@ static bool ath9k_eeprom_release(struct pcidev *dev) {
 
 static bool ath9300_eeprom_release(struct pcidev *dev) {
 	if (dev->ops->pdata) {
-		free(dev->ops->pdata);
+		free((struct ath9300_private*)dev->ops->pdata);
 		dev->ops->pdata = NULL;
 	}
 	return true;
@@ -888,7 +888,7 @@ static bool ath9300_uncompress_block(uint8_t *mptr,
 static bool ath9300_eeprom_decompress(struct pcidev *dev, int code, int reference, uint32_t addr, int length)
 {
 	struct ath9300_private *pdata = dev->ops->pdata;
-	uint8_t *buf = (uint8_t*) malloc (length * sizeof(uint8_t));
+	uint8_t *buf = (uint8_t*) malloc (length * sizeof(uint8_t) + COMP_HDR_LEN);
 	int elen = (sizeof(struct ar9300_eeprom) > length) ? length : sizeof(struct ar9300_eeprom);
 	const struct ar9300_eeprom *eep = NULL;
 

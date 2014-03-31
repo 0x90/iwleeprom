@@ -651,6 +651,9 @@ _nodev:
 
 	if (ofname)
 		fixate_dump(&dev, ofname);
+	
+	if (dev.ops->eeprom_release)
+		dev.ops->eeprom_release(&dev);
 	return 0;
 }
 
