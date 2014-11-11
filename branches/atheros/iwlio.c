@@ -167,14 +167,20 @@ const struct pci_id iwl5k_ids[] = {
 
 /* Intel 6x00/6x50 devices */
 const struct pci_id iwl6k_ids[] = {
-	{ INTEL_PCI_VID,   0x0082, "6000 Series Gen2"},
+	{ INTEL_PCI_VID,   0x0082, "6000 Series Gen2 (6x05)"},
 	{ INTEL_PCI_VID,   0x0083, "Centrino Wireless-N 1000"},
 	{ INTEL_PCI_VID,   0x0084, "Centrino Wireless-N 1000"},
-	{ INTEL_PCI_VID,   0x0085, "6000 Series Gen2"},
+	{ INTEL_PCI_VID,   0x0085, "6000 Series Gen2 (6x05)"},
 	{ INTEL_PCI_VID,   0x0087, "Centrino Advanced-N + WiMAX 6250"},
 	{ INTEL_PCI_VID,   0x0089, "Centrino Advanced-N + WiMAX 6250"},
+	{ INTEL_PCI_VID,   0x008A, "Centrino Wireless-N 1030"},
+	{ INTEL_PCI_VID,   0x008B, "Centrino Wireless-N 1030"},
+	{ INTEL_PCI_VID,   0x0090, "Centrino Wireless-N 6x30"},
+	{ INTEL_PCI_VID,   0x0091, "Centrino Wireless-N 6x30"},
 	{ INTEL_PCI_VID,   0x0885, "WiFi+WiMAX 6050 Series Gen2"},
 	{ INTEL_PCI_VID,   0x0886, "WiFi+WiMAX 6050 Series Gen2"},
+	{ INTEL_PCI_VID,   0x088e, "Centrino Wireless-N 6x35"},
+	{ INTEL_PCI_VID,   0x088f, "Centrino Wireless-N 6x35"},
 	{ INTEL_PCI_VID,   0x422b, "Centrino Ultimate-N 6300"},
 	{ INTEL_PCI_VID,   0x422c, "Centrino Advanced-N 6200"},
 	{ INTEL_PCI_VID,   0x4238, "Centrino Ultimate-N 6300"},
