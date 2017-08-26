@@ -608,11 +608,19 @@ int main(int argc, char** argv)
 	if (parse && dev.ops->eeprom_parse)
 		dev.ops->eeprom_parse(&dev);
 
-	if (ifname && dev.ops->eeprom_writable)
-		eeprom_write(ifname);
+        if (ifname) {
+                if (dev.ops->eeprom_writable)
+                        eeprom_write(ifname);
+                else
+                        die("Read-only eeprom!\n");
+        }
 
-	if (patch11n && dev.ops->eeprom_writable)
-		dev.ops->eeprom_patch11n(&dev);
+        if (patch11n) {
+                if (dev.ops->eeprom_writable)
+                        dev.ops->eeprom_patch11n(&dev);
+                else
+                        die("Read-only eeprom!\n");
+        }
 
 	if (parse && dev.ops->eeprom_parse && (ifname || patch11n)) {
 		printf("\n\ndevice capabilities after eeprom writing:\n");
